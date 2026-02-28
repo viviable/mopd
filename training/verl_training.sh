@@ -5,10 +5,15 @@ export PYTHONBUFFERED=1
 # export RAY_DEBUG=1
 ulimit -c 0
 
-export WANDB_ENTITY="sample-efficient-rlvr" # team
+export WANDB_ENTITY=${WANDB_ENTITY:-"sample-efficient-rlvr"} # team (allow override)
 export EXPERIMENT=${1:-"experiment"}
 CONFIG_NAME=${2:-"ppo_trainer"}
 export TASK=${3:-"datasets/ttcs/lasgroup_verifiable-corpus_math-ai_math500_1000"}
+
+# Some cluster launchers export ROCm device visibility variables even on CUDA nodes.
+# This conflicts with Ray's CUDA_VISIBLE_DEVICES handling and crashes worker startup.
+unset ROCR_VISIBLE_DEVICES
+unset HIP_VISIBLE_DEVICES
 
 # removes the first three arguments from the command line
 if [ "$#" -ge 3 ]; then

@@ -1,16 +1,39 @@
 #!/bin/bash
 
-# Usage: ./run_sdpo_all.sh [--dry-run]
+# Usage: ./run_sdpo_all.sh [--dry-run] [--local] [--skip-install]
 
 DRY_RUN=false
-if [[ "$1" == "--dry-run" ]]; then
-    DRY_RUN=true
+LOCAL_MODE=false
+SKIP_INSTALL=false
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        --local)
+            LOCAL_MODE=true
+            ;;
+        --skip-install)
+            SKIP_INSTALL=true
+            ;;
+    esac
+done
+if [ "$DRY_RUN" = true ]; then
     echo "Dry run mode enabled. Commands will be printed but not executed."
+fi
+if [ "$LOCAL_MODE" = true ]; then
+    echo "Local mode enabled. Jobs will run directly on current node (no sbatch)."
+fi
+if [ "$SKIP_INSTALL" = true ]; then
+    echo "Skip-install mode enabled. pip install steps will be skipped."
 fi
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
+
+# Get the directory where this script is located
+PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )"
 
 # Base settings
 CONFIG_NAME="sdpo"
@@ -58,13 +81,28 @@ submit_job() {
     local data_path="$3"
 
     # Define the environment setup and command execution
-    # We use the user's home directory dynamically
     local setup_cmds="pip install word2number latex2sympy2 math-verify[antlr4_9_3]==0.8.0; \
-pip install -e /users/$USER/SDPO; \
+pip install -e $PROJECT_ROOT; \
 pip install --upgrade wandb; \
-export PYTHONPATH=/users/$USER/SDPO:\$PYTHONPATH"
+export PYTHONPATH=$PROJECT_ROOT:\$PYTHONPATH"
+    if [ "$SKIP_INSTALL" = true ]; then
+        setup_cmds="export PYTHONPATH=$PROJECT_ROOT:\$PYTHONPATH"
+    fi
 
-    local run_cmd="bash /users/$USER/SDPO/training/verl_training.sh $exp_name $CONFIG_NAME $data_path $script_args"
+    local run_cmd="bash $PROJECT_ROOT/training/verl_training.sh $exp_name $CONFIG_NAME $data_path $script_args"
+
+    if [ "$LOCAL_MODE" = true ]; then
+        local local_cmd="bash -c '$setup_cmds; $run_cmd'"
+        if [ "$DRY_RUN" = true ]; then
+            echo "----------------------------------------------------------------"
+            echo "Would run locally for: $exp_name"
+            echo "$local_cmd"
+        else
+            echo "Running locally for: $exp_name"
+            eval "$local_cmd"
+        fi
+        return
+    fi
 
     local wrapped_cmd="srun bash -c '$setup_cmds; $run_cmd'"
 
@@ -75,7 +113,6 @@ export PYTHONPATH=/users/$USER/SDPO:\$PYTHONPATH"
         --nodes="$NODES"
         --partition="$PARTITION"
         --time="$TIME"
-        --environment="$ENV"
         --ntasks-per-node="$NTASKS_PER_NODE"
         --gpus-per-node="$GPUS_PER_NODE"
         --mem="$MEM"
@@ -84,6 +121,11 @@ export PYTHONPATH=/users/$USER/SDPO:\$PYTHONPATH"
         --error="/users/$USER/output/SDPO/%j.err"
         --wrap="$wrapped_cmd"
     )
+
+    # Some Slurm versions do not support --environment.
+    if sbatch --help 2>&1 | grep -q -- "--environment"; then
+        sbatch_cmd+=(--environment="$ENV")
+    fi
 
     if [ "$DRY_RUN" = true ]; then
         echo "----------------------------------------------------------------"
@@ -114,6 +156,8 @@ for TRAIN_BATCH_SIZE in "${TRAIN_BATCH_SIZES[@]}"; do
                             # Format: key=value key2=value2 ...
                             ARGS="data.train_batch_size=$TRAIN_BATCH_SIZE \
 trainer.group_name=SDPO-generalization \
+vars.dir=$PROJECT_ROOT \
+custom_reward_function.path=$PROJECT_ROOT/verl/utils/reward_score/feedback/__init__.py \
 actor_rollout_ref.rollout.n=$ROLLOUT_BATCH_SIZE \
 actor_rollout_ref.model.path=$MODEL_PATH \
 actor_rollout_ref.actor.optim.lr=$LR \
@@ -124,7 +168,7 @@ actor_rollout_ref.actor.self_distillation.dont_reprompt_on_self_success=${DONTS_
 actor_rollout_ref.actor.self_distillation.alpha=$ALPHA \
 actor_rollout_ref.actor.self_distillation.include_environment_feedback=False \
 actor_rollout_ref.actor.optim.lr_warmup_steps=10 \
-actor_rollout_ref.rollout.val_kwargs.n=16"
+actor_rollout_ref.rollout.val_kwargs.n=16 "
 
                             # 3. Submit
                             submit_job "$EXP_NAME" "$ARGS" "$DATA_PATH"
@@ -135,4 +179,3 @@ actor_rollout_ref.rollout.val_kwargs.n=16"
         done
     done
 done
-

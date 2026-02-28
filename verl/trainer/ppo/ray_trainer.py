@@ -372,6 +372,8 @@ class RayPPOTrainer:
 
         self.use_prefix_grouper = self.config.actor_rollout_ref.actor.get("use_prefix_grouper", False)
         self.use_legacy_worker_impl = config.trainer.get("use_legacy_worker_impl", "auto")
+        self.uid_seen_across_steps: set[str] = set()
+        self.uid_ever_success_across_steps: set[str] = set()
 
         self._create_dataloader(train_dataset, val_dataset, collate_fn, train_sampler)
 
@@ -647,6 +649,40 @@ class RayPPOTrainer:
         """Remove <think>...</think> tags and their content from text."""
         return re.sub(r'<think>.*?</think>\s*', '', text, flags=re.DOTALL)
 
+    def _build_step_ids_from_responses(
+        self,
+        responses: torch.Tensor,
+        response_mask: torch.Tensor,
+        separator: str,
+    ) -> torch.Tensor:
+        """Build per-token step ids by splitting responses with a tokenized separator."""
+        sep_ids = self.tokenizer.encode(separator, add_special_tokens=False)
+        if len(sep_ids) == 0:
+            raise ValueError(f"Tokenization of self_distillation.step_separator is empty: {separator!r}")
+
+        batch_size, response_len = responses.shape
+        step_ids = torch.full((batch_size, response_len), -1, dtype=torch.long, device=responses.device)
+
+        for i in range(batch_size):
+            valid_len = int(response_mask[i].sum().item())
+            if valid_len <= 0:
+                continue
+
+            row_ids = responses[i, :valid_len].tolist()
+            cur_step = 0
+            t = 0
+            while t < valid_len:
+                step_ids[i, t] = cur_step
+                if t + len(sep_ids) <= valid_len and row_ids[t : t + len(sep_ids)] == sep_ids:
+                    end = t + len(sep_ids)
+                    step_ids[i, t:end] = cur_step
+                    cur_step += 1
+                    t = end
+                else:
+                    t += 1
+
+        return step_ids
+
     def _get_solution(
         self,
         idx: int,
@@ -667,6 +703,76 @@ class RayPPOTrainer:
         if remove_thinking_from_demonstration:
             solution_str = self._remove_thinking_trace(solution_str)
         return solution_str
+
+    def _get_solution_idx(
+        self,
+        idx: int,
+        success_by_uid: dict[Any, list[int]],
+        uids: list[Any],
+        dont_reprompt_on_self_success: bool = False,
+    ) -> Optional[int]:
+        """Return the index of the primary solution chosen for sample idx, or None."""
+        uid = uids[idx]
+        solution_idxs = success_by_uid[uid]
+        if dont_reprompt_on_self_success:
+            solution_idxs = [j for j in solution_idxs if j != idx]
+        if len(solution_idxs) == 0:
+            return None
+        return solution_idxs[0]
+
+    def _get_another_solution(
+        self,
+        idx: int,
+        primary_idx: Optional[int],
+        success_by_uid: dict[Any, list[int]],
+        uids: list[Any],
+        response_texts: list[str],
+        dont_reprompt_on_self_success: bool = False,
+        remove_thinking_from_demonstration: bool = False,
+    ) -> Optional[str]:
+        """Return a second successful solution (different from primary) for the same uid, or None."""
+        uid = uids[idx]
+        solution_idxs = success_by_uid[uid]
+        if dont_reprompt_on_self_success:
+            solution_idxs = [j for j in solution_idxs if j != idx]
+        if primary_idx is not None:
+            solution_idxs = [j for j in solution_idxs if j != primary_idx]
+        if len(solution_idxs) == 0:
+            return None
+        solution_str = response_texts[solution_idxs[0]]
+        if remove_thinking_from_demonstration:
+            solution_str = self._remove_thinking_trace(solution_str)
+        return solution_str
+
+    def _collect_failures_by_uid(
+        self,
+        batch: DataProto,
+        reward_tensor: torch.Tensor,
+        success_reward_threshold: float,
+    ) -> dict[Any, list[int]]:
+        """Collect indices of failed responses (score < threshold) grouped by uid."""
+        seq_scores = reward_tensor.sum(dim=-1).detach().cpu().numpy()
+        uids = batch.non_tensor_batch["uid"]
+        fail_by_uid: dict[Any, list[int]] = defaultdict(list)
+        for idx, uid in enumerate(uids):
+            if seq_scores[idx] < success_reward_threshold:
+                fail_by_uid[uid].append(idx)
+        return fail_by_uid
+
+    def _get_failure_solution(
+        self,
+        idx: int,
+        fail_by_uid: dict[Any, list[int]],
+        uids: list[Any],
+        response_texts: list[str],
+    ) -> Optional[str]:
+        """Return a random failed response for the same uid (excluding self), or None."""
+        uid = uids[idx]
+        fail_idxs = [j for j in fail_by_uid[uid] if j != idx]
+        if len(fail_idxs) == 0:
+            return None
+        import random
+        return response_texts[random.choice(fail_idxs)]
 
 
     def _maybe_build_self_distillation_batch(
@@ -695,21 +801,49 @@ class RayPPOTrainer:
         )
 
         success_by_uid = self._collect_solutions_by_uid(batch, reward_tensor, success_reward_threshold=self_distillation_cfg.success_reward_threshold)
-        solution_strs = [
-            self._get_solution(
-                i,
-                success_by_uid,
-                batch.non_tensor_batch["uid"],
-                response_texts,
-                self_distillation_cfg.dont_reprompt_on_self_success,
-                self_distillation_cfg.get("remove_thinking_from_demonstration", False),
-            )
+        uids_list = batch.non_tensor_batch["uid"]
+        dont_reprompt_on_self_success = self_distillation_cfg.dont_reprompt_on_self_success
+        remove_thinking = self_distillation_cfg.get("remove_thinking_from_demonstration", False)
+
+        # Primary solution: first successful response for each sample's uid
+        primary_solution_idxs = [
+            self._get_solution_idx(i, success_by_uid, uids_list, dont_reprompt_on_self_success)
             for i in range(batch_size)
         ]
+        solution_strs = [
+            (self._remove_thinking_trace(response_texts[primary_solution_idxs[i]]) if remove_thinking else response_texts[primary_solution_idxs[i]])
+            if primary_solution_idxs[i] is not None else None
+            for i in range(batch_size)
+        ]
+
+        # Another solution: second successful response (different from primary) for same uid
+        include_another_solution = self_distillation_cfg.get("include_another_solution", False)
+        another_solution_strs: list[Optional[str]] = [None] * batch_size
+        if include_another_solution:
+            another_solution_strs = [
+                self._get_another_solution(
+                    i, primary_solution_idxs[i], success_by_uid, uids_list, response_texts,
+                    dont_reprompt_on_self_success, remove_thinking,
+                )
+                for i in range(batch_size)
+            ]
+
+        # Failure solution: random failed response for same uid, used when no primary solution exists
+        include_failure_solution = self_distillation_cfg.get("include_failure_solution", False)
+        failure_solution_strs: list[Optional[str]] = [None] * batch_size
+        if include_failure_solution:
+            fail_by_uid = self._collect_failures_by_uid(batch, reward_tensor, self_distillation_cfg.success_reward_threshold)
+            failure_solution_strs = [
+                self._get_failure_solution(i, fail_by_uid, uids_list, response_texts)
+                if solution_strs[i] is None else None
+                for i in range(batch_size)
+            ]
 
         def _build_teacher_message(i: int) -> list[dict]:
             system_messages = batch.non_tensor_batch["raw_prompt"][i][:-1]
             has_solution = solution_strs[i] is not None
+            has_another_solution = another_solution_strs[i] is not None
+            has_failure_solution = failure_solution_strs[i] is not None
             has_feedback = feedback_list[i] is not None
             feedback_only_without_solution = self_distillation_cfg.get("environment_feedback_only_without_solution", False)
 
@@ -723,6 +857,20 @@ class RayPPOTrainer:
                     successful_previous_attempt=solution_strs[i]
                 )
 
+            # build another solution section
+            another_solution_section = ""
+            if has_another_solution:
+                another_solution_section = self_distillation_cfg.another_solution_template.format(
+                    another_successful_attempt=another_solution_strs[i]
+                )
+
+            # build failure solution section
+            failure_section = ""
+            if has_failure_solution:
+                failure_section = self_distillation_cfg.failure_solution_template.format(
+                    failed_attempt=failure_solution_strs[i]
+                )
+
             # build feedback section
             feedback_section = ""
             if use_feedback:
@@ -730,11 +878,13 @@ class RayPPOTrainer:
                     feedback_raw=feedback_list[i]
                 )
 
-            # combine solution and feedback sections
-            if use_feedback or has_solution:
+            # combine all sections
+            if use_feedback or has_solution or has_another_solution or has_failure_solution:
                 reprompt_text = self_distillation_cfg.reprompt_template.format(
                     prompt=prompt_texts[i],
                     solution=solution_section,
+                    another_solution=another_solution_section,
+                    failure=failure_section,
                     feedback=feedback_section,
                 )
             else:
@@ -770,9 +920,16 @@ class RayPPOTrainer:
             for i in range(batch_size)
         ]
 
-        # self_distillation_mask is True if sample has a solution OR feedback is used (i.e., will get a reprompted message)
+        # self_distillation_mask is True if the teacher prompt is actually reprompted
+        # (i.e., any of: primary solution, another solution, failure solution, or feedback is used)
         self_distillation_mask = torch.tensor(
-            [solution_strs[i] is not None or feedback_used[i] for i in range(batch_size)],
+            [
+                solution_strs[i] is not None
+                or feedback_used[i]
+                or another_solution_strs[i] is not None
+                or failure_solution_strs[i] is not None
+                for i in range(batch_size)
+            ],
             dtype=torch.float32,
             device=device
         )
@@ -781,19 +938,31 @@ class RayPPOTrainer:
         num_with_feedback_available = sum(1 for f in feedback_list if f is not None)
         num_with_feedback_used = sum(1 for f in feedback_used if f)
         num_with_solution = sum(1 for s in solution_strs if s is not None)
+        num_with_another_solution = sum(1 for s in another_solution_strs if s is not None)
+        num_with_failure_solution = sum(1 for s in failure_solution_strs if s is not None)
         metrics = {
             "self_distillation/success_group_fraction": len([uid for uid in uids if len(success_by_uid[uid]) > 0]) / len(uids),
             "self_distillation/success_sample_fraction": num_with_solution / batch_size,
             "self_distillation/feedback_available_fraction": num_with_feedback_available / batch_size,
             "self_distillation/feedback_used_fraction": num_with_feedback_used / batch_size,
             "self_distillation/reprompt_sample_fraction": self_distillation_mask.float().mean().item(),
+            "self_distillation/another_solution_fraction": num_with_another_solution / batch_size,
+            "self_distillation/failure_solution_fraction": num_with_failure_solution / batch_size,
         }
-        return DataProto.from_dict(tensors={
+        tensors = {
             "teacher_input_ids": teacher_input_ids,
             "teacher_attention_mask": teacher_attention_mask,
             "teacher_position_ids": teacher_position_ids,
             "self_distillation_mask": self_distillation_mask,
-        }), metrics
+        }
+        if self_distillation_cfg.get("step_level_kl", False):
+            tensors["self_distillation_step_ids"] = self._build_step_ids_from_responses(
+                responses=responses,
+                response_mask=response_mask,
+                separator=self_distillation_cfg.get("step_separator", "\n\n"),
+            )
+
+        return DataProto.from_dict(tensors=tensors), metrics
 
     def _get_gen_batch(self, batch: DataProto) -> DataProto:
         reward_model_keys = set({"data_source", "reward_model", "extra_info", "uid", "raw_prompt"}) & batch.non_tensor_batch.keys()
@@ -812,6 +981,58 @@ class RayPPOTrainer:
 
         return gen_batch
 
+    def _ensure_uid(self, batch: DataProto) -> None:
+        """Ensure each sample has a stable uid for grouping."""
+        non_tensor_batch = batch.non_tensor_batch
+        batch_size = len(batch.batch)
+
+        if "idx" in non_tensor_batch and len(non_tensor_batch["idx"]) == batch_size:
+            # Prefer dataset idx directly so uid cardinality matches sample cardinality.
+            non_tensor_batch["uid"] = np.array([str(idx) for idx in non_tensor_batch["idx"]], dtype=object)
+            return
+
+        if "uid" in non_tensor_batch and len(non_tensor_batch["uid"]) == batch_size:
+            return
+
+        # Fall back to extra_info["index"] if present (e.g. produced by data/preprocess.py)
+        if "extra_info" in non_tensor_batch and len(non_tensor_batch["extra_info"]) == batch_size:
+            extra_infos = non_tensor_batch["extra_info"]
+            if all(isinstance(e, dict) and "index" in e for e in extra_infos):
+                non_tensor_batch["uid"] = np.array([str(e["index"]) for e in extra_infos], dtype=object)
+                return
+
+        non_tensor_batch["uid"] = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
+
+    def _reset_uid_success_tracking(self) -> None:
+        self.uid_seen_across_steps.clear()
+        self.uid_ever_success_across_steps.clear()
+
+    def _update_uid_success_tracking(self, batch: DataProto, reward_tensor: torch.Tensor) -> dict[str, float]:
+        self_distillation_cfg = self.config.actor_rollout_ref.actor.get("self_distillation", None)
+        if self_distillation_cfg is None:
+            return {}
+
+        success_reward_threshold = float(self_distillation_cfg.success_reward_threshold)
+        seq_scores = reward_tensor.sum(dim=-1).detach().cpu().numpy()
+        uids = [str(uid) for uid in batch.non_tensor_batch["uid"]]
+
+        self.uid_seen_across_steps.update(uids)
+        self.uid_ever_success_across_steps.update(
+            uid for uid, score in zip(uids, seq_scores, strict=True) if score >= success_reward_threshold
+        )
+
+        uid_seen_count = len(self.uid_seen_across_steps)
+        uid_success_count = len(self.uid_ever_success_across_steps)
+        uid_never_success_count = uid_seen_count - uid_success_count
+        uid_ever_success_fraction = uid_success_count / uid_seen_count if uid_seen_count > 0 else 0.0
+
+        return {
+            "self_distillation/uid_seen_count": uid_seen_count,
+            "self_distillation/uid_ever_success_count": uid_success_count,
+            "self_distillation/uid_never_success_count": uid_never_success_count,
+            "self_distillation/uid_ever_success_fraction": uid_ever_success_fraction,
+        }
+
     def _validate(self, merged: bool = False):
         data_source_lst = []
         reward_extra_infos_dict: dict[str, list] = defaultdict(list)
@@ -826,11 +1047,7 @@ class RayPPOTrainer:
 
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
-
-            if "uid" not in test_batch.non_tensor_batch:
-                test_batch.non_tensor_batch["uid"] = np.array(
-                    [str(uuid.uuid4()) for _ in range(len(test_batch.batch))], dtype=object
-                )
+            self._ensure_uid(test_batch)
 
             # repeat test batch
             test_batch = test_batch.repeat(
@@ -1570,6 +1787,7 @@ class RayPPOTrainer:
         )
 
         self.global_steps = 0
+        self._reset_uid_success_tracking()
 
         # load checkpoint before doing anything
         self._load_checkpoint()
@@ -1622,10 +1840,7 @@ class RayPPOTrainer:
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
                 batch.meta_info["temperature"] = self.config.actor_rollout_ref.rollout.temperature
 
-                # add uid to batch
-                batch.non_tensor_batch["uid"] = np.array(
-                    [str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object
-                )
+                self._ensure_uid(batch)
 
                 gen_batch = self._get_gen_batch(batch)
 
@@ -1783,6 +1998,7 @@ class RayPPOTrainer:
                         if self.config.reward_model.launch_reward_fn_async:
                             reward_tensor, reward_extra_infos_dict = ray.get(future_reward)
                         batch.batch["token_level_scores"] = reward_tensor
+                        metrics.update(self._update_uid_success_tracking(batch, reward_tensor))
 
                         self_distillation_data = self._maybe_build_self_distillation_batch(batch, reward_tensor, reward_extra_infos_dict)
                         if self_distillation_data is not None:

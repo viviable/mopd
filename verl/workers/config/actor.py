@@ -60,6 +60,8 @@ class SelfDistillationConfig(BaseConfig):
         environment_feedback_only_without_solution (bool): If True, only use feedback when no solution is available (ignore feedback when solution exists).
         reprompt_template_feedback (str): Template for reprompting with feedback but no solution.
         reprompt_template_feedback_solution (str): Template for reprompting with both feedback and solution.
+        step_level_kl (bool): If True, aggregate SDPO KL per step split by `step_separator`, then broadcast to tokens.
+        step_separator (str): Step separator used to split student responses (default: "\\n\\n").
     """
 
     full_logit_distillation: bool = True
@@ -75,13 +77,23 @@ class SelfDistillationConfig(BaseConfig):
     remove_thinking_from_demonstration: bool = False
     is_clip: Optional[float] = None
     reprompt_template: str = (
-        "{prompt}{solution}{feedback}\n\n"
+        "{prompt}{solution}{another_solution}{failure}{feedback}\n\n"
         "Correctly solve the original question.\n"
     )
     solution_template: str = (
         "\n"
         "Correct solution:\n\n"
         "{successful_previous_attempt}\n\n"
+    )
+    another_solution_template: str = (
+        "\n"
+        "Another successful solution:\n\n"
+        "{another_successful_attempt}\n\n"
+    )
+    failure_solution_template: str = (
+        "\n"
+        "A known failed solution (avoid repeating this mistake):\n\n"
+        "{failed_attempt}\n\n"
     )
     feedback_template: str = (
         "\n"
@@ -90,6 +102,10 @@ class SelfDistillationConfig(BaseConfig):
     )
     include_environment_feedback: bool = False
     environment_feedback_only_without_solution: bool = False
+    include_another_solution: bool = False
+    include_failure_solution: bool = False
+    step_level_kl: bool = False
+    step_separator: str = "\n\n"
 
     def __post_init__(self):
         if not 0.0 <= self.alpha <= 1.0:
@@ -110,6 +126,8 @@ class SelfDistillationConfig(BaseConfig):
             )
         if self.is_clip is not None and self.is_clip <= 0:
             raise ValueError(f"self_distillation.is_clip must be positive, got {self.is_clip}")
+        if self.step_level_kl and not self.step_separator:
+            raise ValueError("self_distillation.step_separator must be non-empty when step_level_kl=True")
 
 
 @dataclass

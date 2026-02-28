@@ -127,9 +127,15 @@ self_distillation:
   # IS clip for loss; null disables IS weighting
   is_clip: 2
 
-  # Reprompting template - available variables: prompt, successful_previous_attempt, feedback
+  # If True, compute SDPO KL at step level and broadcast per-step loss to all tokens in that step
+  step_level_kl: False
+
+  # Separator used to split student responses into steps for step-level KL
+  step_separator: "\n\n"
+
+  # Reprompting template - available variables: prompt, solution, another_solution, failure, feedback
   reprompt_template: |-
-    {prompt}{solution}{feedback}
+    {prompt}{solution}{another_solution}{failure}{feedback}
 
     Correctly solve the original question.
 
@@ -140,12 +146,32 @@ self_distillation:
 
     {successful_previous_attempt}
 
+  # Another solution template - available variables: another_successful_attempt
+  another_solution_template: |-
+
+    Another successful solution:
+
+    {another_successful_attempt}
+
+  # Failure solution template - available variables: failed_attempt
+  failure_solution_template: |-
+
+    A known failed solution (avoid repeating this mistake):
+
+    {failed_attempt}
+
   # Feedback template - available variables: feedback_raw
   feedback_template: |-
 
     The following is feedback from your unsuccessful earlier attempt:
 
     {feedback_raw}
+
+  # Whether to include another successful solution from the same uid (if available)
+  include_another_solution: False
+
+  # Whether to include a failed solution when no successful solution exists for the uid
+  include_failure_solution: False
 
 # Constant C in Dual-clip PPO; clips when advantage < 0 and ratio > C
 clip_ratio_c: 3.0

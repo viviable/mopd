@@ -121,8 +121,9 @@ ENV/
 
 # data
 *.parquet
-
-
+datasets/lcb_v6/train.json
+datasets/lcb_v6/test.json
+datasets/lcb_v6.json
 # local logs
 logs
 log

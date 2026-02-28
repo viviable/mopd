@@ -1093,6 +1093,7 @@ def compute_self_distillation_loss(
     student_topk_log_probs: Optional[torch.Tensor] = None,
     teacher_topk_log_probs: Optional[torch.Tensor] = None,
     self_distillation_mask: Optional[torch.Tensor] = None,
+    self_distillation_step_ids: Optional[torch.Tensor] = None,
     loss_agg_mode: str = "token-mean",
     rollout_is_weights: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, dict[str, Any]]:
@@ -1178,6 +1179,46 @@ def compute_self_distillation_loss(
     # Apply rollout correction weights if provided
     if rollout_is_weights is not None:
         per_token_loss = per_token_loss * rollout_is_weights
+
+    # Optionally aggregate KL per step and broadcast step-level loss back to tokens.
+    if self_distillation_config.get("step_level_kl", False):
+        if self_distillation_step_ids is None:
+            raise ValueError("self_distillation_step_ids is required when self_distillation.step_level_kl=True.")
+        if self_distillation_step_ids.shape != per_token_loss.shape:
+            raise ValueError(
+                "self_distillation_step_ids shape must match per-token loss shape. "
+                f"Got {self_distillation_step_ids.shape=} and {per_token_loss.shape=}."
+            )
+
+        valid_mask = (loss_mask > 0).bool() & (self_distillation_step_ids >= 0)
+        if valid_mask.any():
+            step_ids = self_distillation_step_ids.to(torch.long)
+            # Shift per-sample step ids into a unique flat index space so we can
+            # use scatter_add for efficient per-step reductions on GPU.
+            n_steps_upper = int(step_ids[valid_mask].max().item()) + 1
+            batch_offsets = (
+                torch.arange(step_ids.size(0), device=step_ids.device, dtype=step_ids.dtype).unsqueeze(1) * n_steps_upper
+            )
+            flat_step_ids = (step_ids + batch_offsets).view(-1)
+            flat_valid = valid_mask.view(-1)
+            flat_values = per_token_loss.view(-1)
+
+            group_count = step_ids.size(0) * n_steps_upper
+            sums = torch.zeros(group_count, device=per_token_loss.device, dtype=per_token_loss.dtype)
+            counts = torch.zeros(group_count, device=per_token_loss.device, dtype=per_token_loss.dtype)
+
+            valid_group_ids = flat_step_ids[flat_valid]
+            sums.scatter_add_(0, valid_group_ids, flat_values[flat_valid])
+            counts.scatter_add_(0, valid_group_ids, torch.ones_like(flat_values[flat_valid]))
+
+            means = sums / counts.clamp_min(1.0)
+            per_token_loss = means[flat_step_ids].view_as(per_token_loss) * valid_mask.to(per_token_loss.dtype)
+            metrics["self_distillation/avg_steps_per_sample"] = (
+                (counts.view(step_ids.size(0), n_steps_upper) > 0).sum(dim=1).float().mean().item()
+            )
+        else:
+            per_token_loss = torch.zeros_like(per_token_loss)
+            metrics["self_distillation/avg_steps_per_sample"] = 0.0
 
     loss = agg_loss(
         loss_mat=per_token_loss,

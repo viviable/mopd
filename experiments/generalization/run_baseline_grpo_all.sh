@@ -72,7 +72,6 @@ export PYTHONPATH=/users/$USER/SDPO:\$PYTHONPATH"
         --nodes="$NODES"
         --partition="$PARTITION"
         --time="$TIME"
-        --environment="$ENV"
         --ntasks-per-node="$NTASKS_PER_NODE"
         --gpus-per-node="$GPUS_PER_NODE"
         --mem="$MEM"
@@ -81,6 +80,11 @@ export PYTHONPATH=/users/$USER/SDPO:\$PYTHONPATH"
         --error="/users/$USER/output/SDPO/%j.err"
         --wrap="$wrapped_cmd"
     )
+
+    # Some Slurm versions do not support --environment.
+    if sbatch --help 2>&1 | grep -q -- "--environment"; then
+        sbatch_cmd+=(--environment="$ENV")
+    fi
 
     if [ "$DRY_RUN" = true ]; then
         echo "----------------------------------------------------------------"
@@ -125,4 +129,3 @@ actor_rollout_ref.rollout.val_kwargs.n=16"
         done
     done
 done
-

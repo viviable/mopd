@@ -884,14 +884,23 @@ class RayPPOTrainer:
         summarize_solutions = self_distillation_cfg.get("summarize_solutions", False)
         summary_from_all = self_distillation_cfg.get("summary_from_all", False)
         solution_summary_strs: list[str] = [""] * batch_size
+        sampled_summary_total = 0
+        sampled_summary_success = 0
+        sampled_summary_failure = 0
+        sampled_summary_with_tag = 0
+        sampled_summary_fallback = 0
+        summary_candidates = 0
+        summary_tag_available_total = 0
         if summarize_solutions:
             import random as _random
             tag = self_distillation_cfg.get("summary_tag", "summary")
             k = self_distillation_cfg.get("summary_k", 1)
             response_summaries = [self._extract_summary(t, tag) for t in response_texts]
+            summary_tag_available_total = sum(1 for s in response_summaries if s is not None)
             for i in range(batch_size):
                 if solution_strs[i] is None:
                     continue
+                summary_candidates += 1
                 uid = uids_list[i]
                 if summary_from_all:
                     pool = list(all_by_uid[uid])
@@ -901,15 +910,25 @@ class RayPPOTrainer:
                     pool = [j for j in pool if j != i]
                 pool = [j for j in pool if j != primary_solution_idxs[i]]
                 sampled = _random.sample(pool, min(k, len(pool)))
+                sampled_summary_total += len(sampled)
                 blocks = []
                 for j in sampled:
                     summary = response_summaries[j]
+                    if summary_from_all and j in success_set:
+                        sampled_summary_success += 1
+                    elif summary_from_all:
+                        sampled_summary_failure += 1
+                    else:
+                        sampled_summary_success += 1
                     if summary is None:
                         # fall back to short excerpt
                         fallback = response_texts[j]
                         if remove_thinking:
                             fallback = self._remove_thinking_trace(fallback)
                         summary = fallback[:300]
+                        sampled_summary_fallback += 1
+                    else:
+                        sampled_summary_with_tag += 1
                     if summary_from_all and j not in success_set:
                         template = self_distillation_cfg.summary_item_template_failed
                     else:
@@ -1034,6 +1053,25 @@ class RayPPOTrainer:
             "self_distillation/another_solution_fraction": num_with_another_solution / batch_size,
             "self_distillation/failure_solution_fraction": num_with_failure_solution / batch_size,
             "self_distillation/summary_sample_fraction": num_with_summary / batch_size,
+            "self_distillation/summary_candidate_count": float(summary_candidates),
+            "self_distillation/summary_tag_available_count": float(summary_tag_available_total),
+            "self_distillation/summary_sampled_total_count": float(sampled_summary_total),
+            "self_distillation/summary_sampled_success_count": float(sampled_summary_success),
+            "self_distillation/summary_sampled_failure_count": float(sampled_summary_failure),
+            "self_distillation/summary_sampled_with_tag_count": float(sampled_summary_with_tag),
+            "self_distillation/summary_sampled_fallback_count": float(sampled_summary_fallback),
+            "self_distillation/summary_sampled_success_fraction": (
+                sampled_summary_success / sampled_summary_total if sampled_summary_total > 0 else 0.0
+            ),
+            "self_distillation/summary_sampled_failure_fraction": (
+                sampled_summary_failure / sampled_summary_total if sampled_summary_total > 0 else 0.0
+            ),
+            "self_distillation/summary_sampled_with_tag_fraction": (
+                sampled_summary_with_tag / sampled_summary_total if sampled_summary_total > 0 else 0.0
+            ),
+            "self_distillation/summary_sampled_fallback_fraction": (
+                sampled_summary_fallback / sampled_summary_total if sampled_summary_total > 0 else 0.0
+            ),
         }
         tensors = {
             "teacher_input_ids": teacher_input_ids,

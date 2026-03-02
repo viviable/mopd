@@ -17,6 +17,7 @@ DATA_PATH="datasets/lcb_v6"
 TRAIN_BATCH_SIZE=32
 ROLLOUT_BATCH_SIZE=8
 LR=1e-5
+SEED=${SEED:-42}
 LAMBDA=0.0
 CLIP_ADV_HIGH=null
 DONTS_REPROMPT_ON_SELF_SUCCESS=True
@@ -81,6 +82,7 @@ EXP_NAME="105554-LcbV6-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLL
 
 ARGS=(
   "data.train_batch_size=$TRAIN_BATCH_SIZE"
+  "data.seed=$SEED"
   "data.max_prompt_length=2048"
   "trainer.group_name=SDPO-local"
   "trainer.project_name=sdpo_base"
@@ -96,6 +98,8 @@ ARGS=(
   "+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2"
   "+critic.model.override_config.attn_implementation=flash_attention_2"
   "actor_rollout_ref.actor.optim.lr=$LR"
+  "actor_rollout_ref.actor.data_loader_seed=$SEED"
+  "critic.data_loader_seed=$SEED"
   "actor_rollout_ref.actor.ppo_mini_batch_size=32"
   "actor_rollout_ref.actor.self_distillation.distillation_topk=100"
   "algorithm.rollout_correction.rollout_is=token"
@@ -106,6 +110,7 @@ ARGS=(
   "actor_rollout_ref.actor.self_distillation.summarize_solutions=$SUMMARIZE_SOLUTIONS"
   "actor_rollout_ref.actor.self_distillation.summary_k=$SUMMARY_K"
   "actor_rollout_ref.actor.optim.lr_warmup_steps=10"
+  "actor_rollout_ref.rollout.seed=$SEED"
   "actor_rollout_ref.rollout.val_kwargs.n=8"
 )
 
@@ -114,6 +119,7 @@ echo "Starting Local SDPO Training"
 echo "Experiment: $EXP_NAME"
 echo "Data: $DATA_PATH"
 echo "Model: $MODEL_PATH"
+echo "Seed: $SEED"
 echo "Resolved GPUs: visible=${VISIBLE_GPUS}, trainer.n_gpus_per_node=${N_GPUS_PER_NODE}, rollout.tp=${ROLLOUT_TP_SIZE}"
 echo "----------------------------------------------------------------"
 

@@ -774,6 +774,36 @@ class RayPPOTrainer:
         import random
         return response_texts[random.choice(fail_idxs)]
 
+    @staticmethod
+    def _extract_summary(text: str, tag: str) -> Optional[str]:
+        """Extract content from <tag>...</tag> in text. Returns None if tag not found."""
+        import re as _re
+        match = _re.search(rf'<{tag}>(.*?)</{tag}>', text, _re.DOTALL)
+        return match.group(1).strip() if match else None
+
+    def _add_summary_instruction_to_batch(self, gen_batch: DataProto, summary_instruction: str) -> DataProto:
+        """Append summary_instruction to the last user message of each sample's raw_prompt.
+
+        The vLLM async path generates from raw_prompt message dicts (not tensor input_ids);
+        updating non_tensor_batch["raw_prompt"] is sufficient — the worker tokenizes on its side.
+
+        Elements are modified in-place (not by array reassignment) so that the numpy array
+        object stays the same. Since gen_batch.non_tensor_batch["raw_prompt"] is the same
+        object as batch.non_tensor_batch["raw_prompt"] (shared reference via .update()), this
+        keeps both consistent and avoids the DataProto.union identity/equality check.
+        """
+        raw_prompts = gen_batch.non_tensor_batch["raw_prompt"]
+
+        for i, messages in enumerate(raw_prompts):
+            msgs = [dict(m) for m in messages]
+            for j in range(len(msgs) - 1, -1, -1):
+                if msgs[j].get("role") == "user":
+                    msgs[j] = dict(msgs[j])
+                    msgs[j]["content"] = msgs[j]["content"] + summary_instruction
+                    break
+            raw_prompts[i] = msgs  # in-place element update; preserves array object identity
+
+        return gen_batch
 
     def _maybe_build_self_distillation_batch(
         self,
@@ -804,6 +834,13 @@ class RayPPOTrainer:
         uids_list = batch.non_tensor_batch["uid"]
         dont_reprompt_on_self_success = self_distillation_cfg.dont_reprompt_on_self_success
         remove_thinking = self_distillation_cfg.get("remove_thinking_from_demonstration", False)
+
+        # Build a complete uid -> [all indices] map (used when summary_from_all=True)
+        from collections import defaultdict as _defaultdict
+        all_by_uid: dict = _defaultdict(list)
+        for _idx, _uid in enumerate(uids_list):
+            all_by_uid[_uid].append(_idx)
+        success_set: set = {j for idxs in success_by_uid.values() for j in idxs}
 
         # Primary solution: first successful response for each sample's uid
         primary_solution_idxs = [
@@ -839,11 +876,53 @@ class RayPPOTrainer:
                 for i in range(batch_size)
             ]
 
+        # Solution summaries: sample k other responses (excl. self and primary),
+        # extract their <summary> tags, and build a concatenated block per sample.
+        # When summary_from_all=True, samples from all responses (success + failure) and
+        # labels each block as successful or unsuccessful. Otherwise only samples successes.
+        # Mutually exclusive with include_another_solution / include_failure_solution.
+        summarize_solutions = self_distillation_cfg.get("summarize_solutions", False)
+        summary_from_all = self_distillation_cfg.get("summary_from_all", False)
+        solution_summary_strs: list[str] = [""] * batch_size
+        if summarize_solutions:
+            import random as _random
+            tag = self_distillation_cfg.get("summary_tag", "summary")
+            k = self_distillation_cfg.get("summary_k", 1)
+            response_summaries = [self._extract_summary(t, tag) for t in response_texts]
+            for i in range(batch_size):
+                if solution_strs[i] is None:
+                    continue
+                uid = uids_list[i]
+                if summary_from_all:
+                    pool = list(all_by_uid[uid])
+                else:
+                    pool = list(success_by_uid[uid])
+                if dont_reprompt_on_self_success:
+                    pool = [j for j in pool if j != i]
+                pool = [j for j in pool if j != primary_solution_idxs[i]]
+                sampled = _random.sample(pool, min(k, len(pool)))
+                blocks = []
+                for j in sampled:
+                    summary = response_summaries[j]
+                    if summary is None:
+                        # fall back to short excerpt
+                        fallback = response_texts[j]
+                        if remove_thinking:
+                            fallback = self._remove_thinking_trace(fallback)
+                        summary = fallback[:300]
+                    if summary_from_all and j not in success_set:
+                        template = self_distillation_cfg.summary_item_template_failed
+                    else:
+                        template = self_distillation_cfg.summary_item_template
+                    blocks.append(template.format(summary_text=summary))
+                solution_summary_strs[i] = "".join(blocks)
+
         def _build_teacher_message(i: int) -> list[dict]:
             system_messages = batch.non_tensor_batch["raw_prompt"][i][:-1]
             has_solution = solution_strs[i] is not None
             has_another_solution = another_solution_strs[i] is not None
             has_failure_solution = failure_solution_strs[i] is not None
+            has_solution_summaries = solution_summary_strs[i] != ""
             has_feedback = feedback_list[i] is not None
             feedback_only_without_solution = self_distillation_cfg.get("environment_feedback_only_without_solution", False)
 
@@ -856,6 +935,9 @@ class RayPPOTrainer:
                 solution_section = self_distillation_cfg.solution_template.format(
                     successful_previous_attempt=solution_strs[i]
                 )
+
+            # build solution summaries section (k blocks concatenated)
+            solution_summaries_section = solution_summary_strs[i]
 
             # build another solution section
             another_solution_section = ""
@@ -879,10 +961,11 @@ class RayPPOTrainer:
                 )
 
             # combine all sections
-            if use_feedback or has_solution or has_another_solution or has_failure_solution:
+            if use_feedback or has_solution or has_another_solution or has_failure_solution or has_solution_summaries:
                 reprompt_text = self_distillation_cfg.reprompt_template.format(
                     prompt=prompt_texts[i],
                     solution=solution_section,
+                    solution_summaries=solution_summaries_section,
                     another_solution=another_solution_section,
                     failure=failure_section,
                     feedback=feedback_section,
@@ -921,13 +1004,14 @@ class RayPPOTrainer:
         ]
 
         # self_distillation_mask is True if the teacher prompt is actually reprompted
-        # (i.e., any of: primary solution, another solution, failure solution, or feedback is used)
+        # (i.e., any of: primary solution, another solution, failure solution, solution summaries, or feedback is used)
         self_distillation_mask = torch.tensor(
             [
                 solution_strs[i] is not None
                 or feedback_used[i]
                 or another_solution_strs[i] is not None
                 or failure_solution_strs[i] is not None
+                or solution_summary_strs[i] != ""
                 for i in range(batch_size)
             ],
             dtype=torch.float32,
@@ -940,6 +1024,7 @@ class RayPPOTrainer:
         num_with_solution = sum(1 for s in solution_strs if s is not None)
         num_with_another_solution = sum(1 for s in another_solution_strs if s is not None)
         num_with_failure_solution = sum(1 for s in failure_solution_strs if s is not None)
+        num_with_summary = sum(1 for s in solution_summary_strs if s)
         metrics = {
             "self_distillation/success_group_fraction": len([uid for uid in uids if len(success_by_uid[uid]) > 0]) / len(uids),
             "self_distillation/success_sample_fraction": num_with_solution / batch_size,
@@ -948,6 +1033,7 @@ class RayPPOTrainer:
             "self_distillation/reprompt_sample_fraction": self_distillation_mask.float().mean().item(),
             "self_distillation/another_solution_fraction": num_with_another_solution / batch_size,
             "self_distillation/failure_solution_fraction": num_with_failure_solution / batch_size,
+            "self_distillation/summary_sample_fraction": num_with_summary / batch_size,
         }
         tensors = {
             "teacher_input_ids": teacher_input_ids,
@@ -1843,6 +1929,13 @@ class RayPPOTrainer:
                 self._ensure_uid(batch)
 
                 gen_batch = self._get_gen_batch(batch)
+
+                # Optionally append summary instruction to generation prompt
+                _sd_cfg = self.config.actor_rollout_ref.actor.get("self_distillation", None)
+                if _sd_cfg and _sd_cfg.get("summarize_solutions", False):
+                    gen_batch = self._add_summary_instruction_to_batch(
+                        gen_batch, _sd_cfg.summary_instruction
+                    )
 
                 # pass global_steps to trace
                 gen_batch.meta_info["global_steps"] = self.global_steps

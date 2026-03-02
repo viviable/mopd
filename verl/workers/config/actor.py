@@ -104,6 +104,20 @@ class SelfDistillationConfig(BaseConfig):
     environment_feedback_only_without_solution: bool = False
     include_another_solution: bool = False
     include_failure_solution: bool = False
+    summarize_solutions: bool = False
+    summary_k: int = 1
+    summary_tag: str = "summary"
+    summary_instruction: str = (
+        "\n\nAfter your answer, briefly summarize your key approach "
+        "in one sentence inside <summary> tags, e.g. <summary>...</summary>."
+    )
+    summary_item_template: str = (
+        "\nSummary of another successful solution:\n\n{summary_text}\n\n"
+    )
+    summary_from_all: bool = False
+    summary_item_template_failed: str = (
+        "\nSummary of another unsuccessful solution:\n\n{summary_text}\n\n"
+    )
     step_level_kl: bool = False
     step_separator: str = "\n\n"
 

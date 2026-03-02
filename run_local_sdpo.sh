@@ -10,8 +10,8 @@ CONFIG_NAME="sdpo"
 
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
-DATA_PATH="datasets/sciknoweval/biology"
-
+# DATA_PATH="datasets/sciknoweval/biology"
+DATA_PATH="datasets/lcb_v6"
 
 # Hyperparameters (from experiments/run_sdpo_all.sh)
 TRAIN_BATCH_SIZE=32
@@ -22,8 +22,11 @@ CLIP_ADV_HIGH=null
 DONTS_REPROMPT_ON_SELF_SUCCESS=True
 ALPHA=0.5
 MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
-INCLUDE_ANOTHER_SOLUTION=True
-INCLUDE_FAILURE_SOLUTION=True
+INCLUDE_ANOTHER_SOLUTION=False
+INCLUDE_FAILURE_SOLUTION=False
+SUMMARIZE_SOLUTIONS=False
+SUMMARY_FROM_ALL=False   # 新增
+SUMMARY_K=8
 
 # Local-safe default: 1 GPU unless user explicitly pins devices.
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
@@ -74,33 +77,37 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="105553-TFF-Bio-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
+EXP_NAME="105554-LcbV6-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
 
-ARGS="data.train_batch_size=$TRAIN_BATCH_SIZE \
-data.max_prompt_length=2048 \
-trainer.group_name=SDPO-local \
-trainer.project_name=sdpo_base \
-trainer.logger=[console,wandb] \
-trainer.test_freq=20 \
-trainer.n_gpus_per_node=$N_GPUS_PER_NODE \
-actor_rollout_ref.rollout.n=$ROLLOUT_BATCH_SIZE \
-actor_rollout_ref.rollout.name=vllm \
-actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE \
-actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
-actor_rollout_ref.model.path=$MODEL_PATH \
-actor_rollout_ref.model.use_remove_padding=False \
-+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2 \
-+critic.model.override_config.attn_implementation=flash_attention_2  \
-actor_rollout_ref.actor.optim.lr=$LR \
-actor_rollout_ref.actor.ppo_mini_batch_size=32 \
-actor_rollout_ref.actor.self_distillation.distillation_topk=100 \
-algorithm.rollout_correction.rollout_is=token \
-actor_rollout_ref.actor.self_distillation.dont_reprompt_on_self_success=${DONTS_REPROMPT_ON_SELF_SUCCESS} \
-actor_rollout_ref.actor.self_distillation.alpha=$ALPHA \
-actor_rollout_ref.actor.self_distillation.include_another_solution=$INCLUDE_ANOTHER_SOLUTION \
-actor_rollout_ref.actor.self_distillation.include_failure_solution=$INCLUDE_FAILURE_SOLUTION \
-actor_rollout_ref.actor.optim.lr_warmup_steps=10 \
-actor_rollout_ref.rollout.val_kwargs.n=8"
+ARGS=(
+  "data.train_batch_size=$TRAIN_BATCH_SIZE"
+  "data.max_prompt_length=2048"
+  "trainer.group_name=SDPO-local"
+  "trainer.project_name=sdpo_base"
+  "trainer.logger=[console,wandb]"
+  "trainer.test_freq=5"
+  "trainer.n_gpus_per_node=$N_GPUS_PER_NODE"
+  "actor_rollout_ref.rollout.n=$ROLLOUT_BATCH_SIZE"
+  "actor_rollout_ref.rollout.name=vllm"
+  "actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE"
+  "actor_rollout_ref.rollout.gpu_memory_utilization=0.75"
+  "actor_rollout_ref.model.path=$MODEL_PATH"
+  "actor_rollout_ref.model.use_remove_padding=False"
+  "+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2"
+  "+critic.model.override_config.attn_implementation=flash_attention_2"
+  "actor_rollout_ref.actor.optim.lr=$LR"
+  "actor_rollout_ref.actor.ppo_mini_batch_size=32"
+  "actor_rollout_ref.actor.self_distillation.distillation_topk=100"
+  "algorithm.rollout_correction.rollout_is=token"
+  "actor_rollout_ref.actor.self_distillation.dont_reprompt_on_self_success=${DONTS_REPROMPT_ON_SELF_SUCCESS}"
+  "actor_rollout_ref.actor.self_distillation.alpha=$ALPHA"
+  "actor_rollout_ref.actor.self_distillation.include_another_solution=$INCLUDE_ANOTHER_SOLUTION"
+  "actor_rollout_ref.actor.self_distillation.include_failure_solution=$INCLUDE_FAILURE_SOLUTION"
+  "actor_rollout_ref.actor.self_distillation.summarize_solutions=$SUMMARIZE_SOLUTIONS"
+  "actor_rollout_ref.actor.self_distillation.summary_k=$SUMMARY_K"
+  "actor_rollout_ref.actor.optim.lr_warmup_steps=10"
+  "actor_rollout_ref.rollout.val_kwargs.n=8"
+)
 
 echo "----------------------------------------------------------------"
 echo "Starting Local SDPO Training"
@@ -110,4 +117,4 @@ echo "Model: $MODEL_PATH"
 echo "Resolved GPUs: visible=${VISIBLE_GPUS}, trainer.n_gpus_per_node=${N_GPUS_PER_NODE}, rollout.tp=${ROLLOUT_TP_SIZE}"
 echo "----------------------------------------------------------------"
 
-bash "$PROJECT_ROOT/training/verl_training.sh" "$EXP_NAME" "$CONFIG_NAME" "$DATA_PATH" $ARGS
+bash "$PROJECT_ROOT/training/verl_training.sh" "$EXP_NAME" "$CONFIG_NAME" "$DATA_PATH" "${ARGS[@]}"

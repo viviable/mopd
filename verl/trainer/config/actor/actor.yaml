@@ -133,9 +133,9 @@ self_distillation:
   # Separator used to split student responses into steps for step-level KL
   step_separator: "\n\n"
 
-  # Reprompting template - available variables: prompt, solution, another_solution, failure, feedback
+  # Reprompting template - available variables: prompt, solution, solution_summaries, another_solution, failure, feedback
   reprompt_template: |-
-    {prompt}{solution}{another_solution}{failure}{feedback}
+    {prompt}{solution}{solution_summaries}{another_solution}{failure}{feedback}
 
     Correctly solve the original question.
 
@@ -172,6 +172,14 @@ self_distillation:
 
   # Whether to include a failed solution when no successful solution exists for the uid
   include_failure_solution: False
+
+  # Whether to append a summary instruction to the generation prompt and inject k solution summaries into the reprompt
+  # Mutually exclusive with include_another_solution / include_failure_solution
+  summarize_solutions: False
+  summary_k: 1
+  summary_tag: summary
+  summary_instruction: "\n\nAfter your answer, briefly summarize your key approach in one sentence inside <summary> tags, e.g. <summary>...</summary>."
+  summary_item_template: "\nSummary of another successful solution:\n\n{summary_text}\n\n"
 
 # Constant C in Dual-clip PPO; clips when advantage < 0 and ratio > C
 clip_ratio_c: 3.0

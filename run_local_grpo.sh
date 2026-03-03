@@ -10,7 +10,8 @@ CONFIG_NAME="baseline_grpo"
 
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
-DATA_PATH="datasets/sciknoweval/biology"
+# DATA_PATH="datasets/sciknoweval/biology"
+DATA_PATH="datasets/lcb_v6"
 
 # Hyperparameters (from experiments/run_baseline_grpo_all.sh)
 TRAIN_BATCH_SIZE=32
@@ -68,7 +69,7 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="105221-Bio-GRPO-mbs${MINI_BATCH_SIZE}-train${TRAIN_BATCH_SIZE}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-${MODEL_NAME}-${SUFFIX}"
+EXP_NAME="105851-5-LcbV6-GRPO-mbs${MINI_BATCH_SIZE}-train${TRAIN_BATCH_SIZE}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-${MODEL_NAME}-${SUFFIX}"
 
 ARGS="data.train_batch_size=$TRAIN_BATCH_SIZE \
 data.max_prompt_length=2048 \

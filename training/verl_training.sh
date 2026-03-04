@@ -1,32 +1,28 @@
 #!/bin/bash
-unset VLLM_ATTENTION_BACKEND
-export VLLM_USE_V1=1
-export PYTHONBUFFERED=1
-# export RAY_DEBUG=1
-ulimit -c 0
+set -euo pipefail
 
-export WANDB_ENTITY=${WANDB_ENTITY:-"sample-efficient-rlvr"} # team (allow override)
-export EXPERIMENT=${1:-"experiment"}
-CONFIG_NAME=${2:-"ppo_trainer"}
-export TASK=${3:-"datasets/ttcs/lasgroup_verifiable-corpus_math-ai_math500_1000"}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AZURE_SCRIPT="${SCRIPT_DIR}/verl_training_azure.sh"
+STANDARD_SCRIPT="${SCRIPT_DIR}/verl_training_standard.sh"
 
-# Some cluster launchers export ROCm device visibility variables even on CUDA nodes.
-# This conflicts with Ray's CUDA_VISIBLE_DEVICES handling and crashes worker startup.
-unset ROCR_VISIBLE_DEVICES
-unset HIP_VISIBLE_DEVICES
+is_azure="0"
+if [ "${USE_AZURE_VERL_TRAINING:-0}" = "1" ]; then
+    is_azure="1"
+elif [ -n "${AZUREML_RUN_ID:-}" ] || [ -n "${AZ_BATCHAI_JOB_NAME:-}" ]; then
+    is_azure="1"
+fi
 
-# removes the first three arguments from the command line
-if [ "$#" -ge 3 ]; then
-    shift 3
+if [ "$is_azure" = "1" ]; then
+    TARGET_SCRIPT="$AZURE_SCRIPT"
+    echo "[verl_training] using Azure script: $TARGET_SCRIPT"
 else
-    echo "Usage: $0 <experiment_name> <config_name> <data_path>"
-    echo "Example: $0 test ppo_trainer datasets/ttcs/lasgroup_verifiable-corpus_math-ai_math500_1000"
+    TARGET_SCRIPT="$STANDARD_SCRIPT"
+    echo "[verl_training] using standard script: $TARGET_SCRIPT"
+fi
+
+if [ ! -f "$TARGET_SCRIPT" ]; then
+    echo "[verl_training] target script not found: $TARGET_SCRIPT"
     exit 1
 fi
 
-echo "Experiment: $EXPERIMENT"
-echo "Config: $CONFIG_NAME"
-echo "Task: $TASK"
-echo "Arguments: $@"
-
-python -m verl.trainer.main_ppo --config-name $CONFIG_NAME "$@"
+bash "$TARGET_SCRIPT" "$@"

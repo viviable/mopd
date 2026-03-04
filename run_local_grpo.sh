@@ -19,6 +19,7 @@ ROLLOUT_BATCH_SIZE=8
 MINI_BATCH_SIZE=32
 LR=1e-5
 MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
+SEED=42
 
 # Local-safe default: 1 GPU unless user explicitly pins devices.
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
@@ -69,22 +70,31 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="105851-5-LcbV6-GRPO-mbs${MINI_BATCH_SIZE}-train${TRAIN_BATCH_SIZE}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-${MODEL_NAME}-${SUFFIX}"
+EXP_NAME="105920-1-LcbV6-GRPO-mbs${MINI_BATCH_SIZE}-train${TRAIN_BATCH_SIZE}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-${MODEL_NAME}-${SUFFIX}"
+RUN_TS=$(date +%Y-%m-%d_%H-%M-%S)
+LOG_DIR="$PROJECT_ROOT/logs/local_runs"
+LOG_FILE="$LOG_DIR/${EXP_NAME}-${RUN_TS}.log"
+
+mkdir -p "$LOG_DIR"
 
 ARGS="data.train_batch_size=$TRAIN_BATCH_SIZE \
 data.max_prompt_length=2048 \
+data.seed=$SEED \
 trainer.group_name=GRPO-local \
 trainer.project_name=sdpo_base \
 trainer.logger=[console,wandb] \
 trainer.test_freq=20 \
 trainer.n_gpus_per_node=$N_GPUS_PER_NODE \
 actor_rollout_ref.actor.optim.lr_warmup_steps=10 \
+actor_rollout_ref.actor.data_loader_seed=$SEED \
+actor_rollout_ref.actor.fsdp_config.seed=$SEED \
 actor_rollout_ref.rollout.n=$ROLLOUT_BATCH_SIZE \
 actor_rollout_ref.rollout.name=vllm \
 actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE \
 actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
 actor_rollout_ref.actor.optim.lr=$LR \
 actor_rollout_ref.actor.ppo_mini_batch_size=$MINI_BATCH_SIZE \
+critic.data_loader_seed=$SEED \
 actor_rollout_ref.model.path=$MODEL_PATH \
 actor_rollout_ref.model.use_remove_padding=False \
 +actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2 \
@@ -97,7 +107,11 @@ echo "Starting Local GRPO Training"
 echo "Experiment: $EXP_NAME"
 echo "Data: $DATA_PATH"
 echo "Model: $MODEL_PATH"
+echo "Seed: $SEED"
+echo "Log file: $LOG_FILE"
 echo "Resolved GPUs: visible=${VISIBLE_GPUS}, trainer.n_gpus_per_node=${N_GPUS_PER_NODE}, rollout.tp=${ROLLOUT_TP_SIZE}"
 echo "----------------------------------------------------------------"
 
-bash "$PROJECT_ROOT/training/verl_training.sh" "$EXP_NAME" "$CONFIG_NAME" "$DATA_PATH" $ARGS
+bash "$PROJECT_ROOT/training/verl_training.sh" "$EXP_NAME" "$CONFIG_NAME" "$DATA_PATH" $ARGS 2>&1 | tee -a "$LOG_FILE"
+EXIT_CODE=${PIPESTATUS[0]}
+exit $EXIT_CODE

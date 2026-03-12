@@ -41,7 +41,6 @@ from vllm.outputs import RequestOutput
 from vllm.usage.usage_lib import UsageContext
 from vllm.v1.engine.async_llm import AsyncLLM
 from vllm.v1.engine.core import EngineCoreProc
-from vllm.v1.engine.utils import CoreEngineProcManager
 from vllm.v1.executor.abstract import Executor
 
 from verl.single_controller.ray import RayClassWithInitArgs
@@ -75,13 +74,38 @@ if _VLLM_VERSION > version.parse("0.11.0"):
 
         get_encoding()
 else:
-    from vllm.utils import FlexibleArgumentParser, get_tcp_uri
+    from vllm.utils import FlexibleArgumentParser
+
+    def get_tcp_uri(host: str, port: int) -> str:
+        if is_valid_ipv6_address(host):
+            return f"tcp://[{host}]:{port}"
+        return f"tcp://{host}:{port}"
 if _VLLM_VERSION >= version.parse("0.12.0"):
     from vllm.v1.core.sched.output import GrammarOutput, SchedulerOutput
     from vllm.v1.outputs import ModelRunnerOutput
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
+
+def _get_supported_serve_flags() -> set[str]:
+    cmd_modules = [vllm.entrypoints.cli.serve]
+    parser = FlexibleArgumentParser(description="vLLM CLI")
+    subparsers = parser.add_subparsers(required=False, dest="subparser")
+
+    for cmd_module in cmd_modules:
+        for cmd in cmd_module.cmd_init():
+            subparser = cmd.subparser_init(subparsers)
+            if cmd.name == "serve":
+                return {
+                    option
+                    for action in subparser._actions
+                    for option in getattr(action, "option_strings", [])
+                    if option.startswith("--")
+                }
+    return set()
+
+
+_SUPPORTED_VLLM_SERVE_FLAGS = _get_supported_serve_flags()
 
 
 class ExternalZeroMQDistributedExecutor(Executor):
@@ -309,7 +333,6 @@ class vLLMHttpServer:
             "max_num_batched_tokens": self.config.max_num_batched_tokens,
             "enable_prefix_caching": self.config.enable_prefix_caching,
             "enable_sleep_mode": self.config.enable_sleep_mode,
-            "logprobs_mode": self.config.logprobs_mode,
             "disable_custom_all_reduce": True,
             "enforce_eager": self.config.enforce_eager,
             "gpu_memory_utilization": self.config.gpu_memory_utilization,
@@ -322,6 +345,15 @@ class vLLMHttpServer:
             "scheduling_policy": self.config.scheduling_policy,
             **engine_kwargs,
         }
+
+        if "--logprobs-mode" in _SUPPORTED_VLLM_SERVE_FLAGS:
+            args["logprobs_mode"] = self.config.logprobs_mode
+        elif self.config.logprobs_mode is not None:
+            logger.warning(
+                "Skipping unsupported vLLM CLI arg `logprobs_mode=%s` for vllm==%s",
+                self.config.logprobs_mode,
+                vllm.__version__,
+            )
 
         if self.config.prometheus.enable:
             if self.config.prometheus.served_model_name:
@@ -417,8 +449,26 @@ class vLLMHttpServer:
 
         engine_client = AsyncLLM.from_vllm_config(vllm_config=vllm_config, usage_context=usage_context, **kwargs)
 
+        if not hasattr(engine_client, "reset_mm_cache"):
+            async def _reset_mm_cache_noop():
+                return None
+
+            engine_client.reset_mm_cache = _reset_mm_cache_noop
+
+        if not hasattr(engine_client, "wait_for_requests_to_drain"):
+            async def _wait_for_requests_to_drain_noop():
+                return None
+
+            engine_client.wait_for_requests_to_drain = _wait_for_requests_to_drain_noop
+
         # Don't keep the dummy data in memory
-        await engine_client.reset_mm_cache()
+        if hasattr(engine_client, "reset_mm_cache"):
+            await engine_client.reset_mm_cache()
+        else:
+            logger.warning(
+                "Skipping unsupported AsyncLLM.reset_mm_cache() for vllm==%s",
+                vllm.__version__,
+            )
 
         app = build_app(args)
         if _VLLM_VERSION > version.parse("0.11.0"):
@@ -432,6 +482,16 @@ class vLLMHttpServer:
         self._server_port, self._server_task = await run_unvicorn(app, args, self._server_address)
 
     async def run_headless(self, args: argparse.Namespace):
+        try:
+            from vllm.v1.engine.utils import CoreEngineProcManager
+        except ImportError as exc:
+            raise ImportError(
+                "Headless vLLM rollout requires a newer vLLM build that provides "
+                "`vllm.v1.engine.utils.CoreEngineProcManager`. "
+                f"Installed vLLM version: {vllm.__version__}. "
+                "Upgrade to a supported version such as vllm>=0.8.5."
+            ) from exc
+
         # Create the EngineConfig.
         engine_args = vllm.AsyncEngineArgs.from_cli_args(args)
         usage_context = UsageContext.OPENAI_API_SERVER
@@ -502,7 +562,10 @@ class vLLMHttpServer:
         if video_data is not None:
             multi_modal_data["video"] = video_data
 
-        prompt = TokensPrompt(prompt_token_ids=prompt_ids, multi_modal_data=multi_modal_data)
+        prompt_kwargs = {"prompt_token_ids": prompt_ids}
+        if multi_modal_data:
+            prompt_kwargs["multi_modal_data"] = multi_modal_data
+        prompt = TokensPrompt(**prompt_kwargs)
 
         # Add lora request
         lora_request = None

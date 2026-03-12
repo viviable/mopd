@@ -2,7 +2,7 @@ defaults:
   - _self_
 
 vars:
-  dir: /home/wyu3/workspace/SDPO
+  dir: ${oc.env:PROJECT_ROOT,/home/wyu3/workspace/opd}
   task: ${oc.env:TASK}
   log_dir: /home/wyu3/workspace/output
   ckpt_dir: /project/flame/wyu3/SDPO/ttrl_runs/${vars.task}

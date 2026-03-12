@@ -9,6 +9,7 @@ export WANDB_ENTITY=${WANDB_ENTITY:-"sample-efficient-rlvr"} # team (allow overr
 export EXPERIMENT=${1:-"experiment"}
 CONFIG_NAME=${2:-"ppo_trainer"}
 export TASK=${3:-"datasets/ttcs/lasgroup_verifiable-corpus_math-ai_math500_1000"}
+export PROJECT_ROOT=${PROJECT_ROOT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"}
 
 # Some cluster launchers export ROCm device visibility variables even on CUDA nodes.
 # This conflicts with Ray's CUDA_VISIBLE_DEVICES handling and crashes worker startup.
@@ -27,6 +28,7 @@ fi
 echo "Experiment: $EXPERIMENT"
 echo "Config: $CONFIG_NAME"
 echo "Task: $TASK"
+echo "Project root: $PROJECT_ROOT"
 echo "Arguments: $@"
 
 python -m verl.trainer.main_ppo --config-name $CONFIG_NAME "$@"

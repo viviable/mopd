@@ -10,20 +10,22 @@ CONFIG_NAME="sdpo"
 
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
-# DATA_PATH="datasets/sciknoweval/biology"
+DATA_PATH="datasets/sciknoweval/biology"
 # DATA_PATH="datasets/lcb_v6"
-DATA_PATH="datasets/G-OPD-Training-Data/Eurus"
 
 # Hyperparameters (from experiments/run_sdpo_all.sh)
-TRAIN_BATCH_SIZE=32
-ROLLOUT_BATCH_SIZE=8
+TRAIN_BATCH_SIZE=4
+ROLLOUT_BATCH_SIZE=2
 LR=1e-5
 SEED=${SEED:-42}
 LAMBDA=0.0
 CLIP_ADV_HIGH=null
 DONTS_REPROMPT_ON_SELF_SUCCESS=True
 ALPHA=0.5
+TEACHER_MODEL_PATH="Qwen/Qwen2.5-7B-Instruct"
 MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
+
+# TEACHER_MODEL_PATH="/home/wyu3/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28"
 INCLUDE_ANOTHER_SOLUTION=False
 INCLUDE_FAILURE_SOLUTION=False
 SUMMARIZE_SOLUTIONS=False
@@ -79,8 +81,7 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="test-eurus-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
-CKPT_DIR="/project/flame/wyu3/mopd/${EXP_NAME}"
+EXP_NAME="107361-0-TS-Sci-Bio-${TEACHER_MODEL_PATH}-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
 
 ARGS=(
   "data.train_batch_size=$TRAIN_BATCH_SIZE"
@@ -90,27 +91,25 @@ ARGS=(
   "trainer.project_name=sdpo_base"
   "trainer.logger=[console,wandb]"
   "trainer.test_freq=5"
-  "trainer.save_freq=50"
-  "trainer.default_local_dir=$CKPT_DIR"
-  "trainer.max_actor_ckpt_to_keep=5"
-  "trainer.max_critic_ckpt_to_keep=5"
   "trainer.n_gpus_per_node=$N_GPUS_PER_NODE"
   "actor_rollout_ref.rollout.n=$ROLLOUT_BATCH_SIZE"
   "actor_rollout_ref.rollout.name=vllm"
   "actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE"
   "actor_rollout_ref.rollout.gpu_memory_utilization=0.6"
   "actor_rollout_ref.model.path=$MODEL_PATH"
+  "+actor_rollout_ref.ref.model.path=$TEACHER_MODEL_PATH"
   "actor_rollout_ref.model.use_remove_padding=False"
   "+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2"
   "+critic.model.override_config.attn_implementation=flash_attention_2"
   "actor_rollout_ref.actor.optim.lr=$LR"
   "actor_rollout_ref.actor.data_loader_seed=$SEED"
   "critic.data_loader_seed=$SEED"
-  "actor_rollout_ref.actor.ppo_mini_batch_size=32"
+  "actor_rollout_ref.actor.ppo_mini_batch_size=$TRAIN_BATCH_SIZE"
   "actor_rollout_ref.actor.self_distillation.distillation_topk=100"
   "algorithm.rollout_correction.rollout_is=token"
   "actor_rollout_ref.actor.self_distillation.dont_reprompt_on_self_success=${DONTS_REPROMPT_ON_SELF_SUCCESS}"
   "actor_rollout_ref.actor.self_distillation.alpha=$ALPHA"
+  "actor_rollout_ref.actor.self_distillation.teacher_update_rate=0.0"
   "actor_rollout_ref.actor.self_distillation.include_another_solution=$INCLUDE_ANOTHER_SOLUTION"
   "actor_rollout_ref.actor.self_distillation.include_failure_solution=$INCLUDE_FAILURE_SOLUTION"
   "actor_rollout_ref.actor.self_distillation.summarize_solutions=$SUMMARIZE_SOLUTIONS"
@@ -124,8 +123,8 @@ echo "Starting Local SDPO Training"
 echo "Experiment: $EXP_NAME"
 echo "Data: $DATA_PATH"
 echo "Model: $MODEL_PATH"
+echo "Teacher model: $TEACHER_MODEL_PATH"
 echo "Seed: $SEED"
-echo "Checkpoint dir: $CKPT_DIR"
 echo "Resolved GPUs: visible=${VISIBLE_GPUS}, trainer.n_gpus_per_node=${N_GPUS_PER_NODE}, rollout.tp=${ROLLOUT_TP_SIZE}"
 echo "----------------------------------------------------------------"
 

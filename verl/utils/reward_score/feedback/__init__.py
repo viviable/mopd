@@ -22,5 +22,12 @@ def compute_score(
     elif data_source in ["tooluse"]:
         results = tooluse.compute_score(solution_str, ground_truth)
     else:
-        raise ValueError(f"Reward style {data_source} not found.")
+        from verl.utils.reward_score import default_compute_score
+
+        results = default_compute_score(
+            data_source=data_source,
+            solution_str=solution_str,
+            ground_truth=ground_truth,
+            extra_info=extra_info,
+        )
     return results

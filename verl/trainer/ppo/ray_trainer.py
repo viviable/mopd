@@ -1011,6 +1011,7 @@ class RayPPOTrainer:
             padding=True,
             truncation=True,
         )
+        teacher_prompt_length = teacher_prompt["attention_mask"].sum(dim=-1).float()
         teacher_input_ids = torch.cat([teacher_prompt["input_ids"].to(device), responses], dim=1)
         teacher_attention_mask = torch.cat([teacher_prompt["attention_mask"].to(device), response_mask], dim=1)
         teacher_position_ids = compute_position_id_with_mask(teacher_attention_mask)
@@ -1044,12 +1045,19 @@ class RayPPOTrainer:
         num_with_another_solution = sum(1 for s in another_solution_strs if s is not None)
         num_with_failure_solution = sum(1 for s in failure_solution_strs if s is not None)
         num_with_summary = sum(1 for s in solution_summary_strs if s)
+        max_teacher_prompt_length = float(self_distillation_cfg.max_reprompt_len)
         metrics = {
             "self_distillation/success_group_fraction": len([uid for uid in uids if len(success_by_uid[uid]) > 0]) / len(uids),
             "self_distillation/success_sample_fraction": num_with_solution / batch_size,
             "self_distillation/feedback_available_fraction": num_with_feedback_available / batch_size,
             "self_distillation/feedback_used_fraction": num_with_feedback_used / batch_size,
             "self_distillation/reprompt_sample_fraction": self_distillation_mask.float().mean().item(),
+            "self_distillation/teacher_prompt_length/mean": teacher_prompt_length.mean().item(),
+            "self_distillation/teacher_prompt_length/max": teacher_prompt_length.max().item(),
+            "self_distillation/teacher_prompt_length/min": teacher_prompt_length.min().item(),
+            "self_distillation/teacher_prompt_length/clip_ratio": (
+                teacher_prompt_length.eq(max_teacher_prompt_length).float().mean().item()
+            ),
             "self_distillation/another_solution_fraction": num_with_another_solution / batch_size,
             "self_distillation/failure_solution_fraction": num_with_failure_solution / batch_size,
             "self_distillation/summary_sample_fraction": num_with_summary / batch_size,

@@ -11,8 +11,13 @@ CONFIG_NAME="sdpo"
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
 # DATA_PATH="datasets/sciknoweval/biology"
+DATA_PATH="datasets/sciknoweval/chemistry"
+# DATA_PATH="datasets/sciknoweval/physics"
+# DATA_PATH="datasets/sciknoweval/material"
+
 # DATA_PATH="datasets/lcb_v6"
-DATA_PATH="datasets/G-OPD-Training-Data/Eurus"
+# DATA_PATH="datasets/G-OPD-Training-Data/Eurus"
+# DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2025"
 
 # Hyperparameters (from experiments/run_sdpo_all.sh)
 TRAIN_BATCH_SIZE=32
@@ -23,12 +28,18 @@ LAMBDA=0.0
 CLIP_ADV_HIGH=null
 DONTS_REPROMPT_ON_SELF_SUCCESS=True
 ALPHA=0.5
-MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
-INCLUDE_ANOTHER_SOLUTION=False
-INCLUDE_FAILURE_SOLUTION=False
+# MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
+MODEL_PATH="Qwen/Qwen3-4B-Instruct-2507"
+ROLLOUT_MAX_MODEL_LEN=4096
+
+
+INCLUDE_ANOTHER_SOLUTION=True
+INCLUDE_FAILURE_SOLUTION=True
 SUMMARIZE_SOLUTIONS=False
 SUMMARY_FROM_ALL=False   # 新增
 SUMMARY_K=8
+MAX_ACTOR_CKPT_TO_KEEP=2
+MAX_CRITIC_CKPT_TO_KEEP=2
 
 # Local-safe default: 1 GPU unless user explicitly pins devices.
 if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
@@ -79,7 +90,7 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="test-eurus-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
+EXP_NAME="107228-0-TF-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
 CKPT_DIR="/project/flame/wyu3/mopd/${EXP_NAME}"
 
 ARGS=(
@@ -92,13 +103,15 @@ ARGS=(
   "trainer.test_freq=5"
   "trainer.save_freq=50"
   "trainer.default_local_dir=$CKPT_DIR"
-  "trainer.max_actor_ckpt_to_keep=5"
-  "trainer.max_critic_ckpt_to_keep=5"
+  "trainer.max_actor_ckpt_to_keep=$MAX_ACTOR_CKPT_TO_KEEP"
+  "trainer.max_critic_ckpt_to_keep=$MAX_CRITIC_CKPT_TO_KEEP"
   "trainer.n_gpus_per_node=$N_GPUS_PER_NODE"
   "actor_rollout_ref.rollout.n=$ROLLOUT_BATCH_SIZE"
   "actor_rollout_ref.rollout.name=vllm"
   "actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE"
   "actor_rollout_ref.rollout.gpu_memory_utilization=0.6"
+  "actor_rollout_ref.rollout.max_model_len=$ROLLOUT_MAX_MODEL_LEN"
+  "actor_rollout_ref.rollout.max_num_batched_tokens=$ROLLOUT_MAX_MODEL_LEN"
   "actor_rollout_ref.model.path=$MODEL_PATH"
   "actor_rollout_ref.model.use_remove_padding=False"
   "+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2"

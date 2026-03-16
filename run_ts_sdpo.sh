@@ -11,6 +11,8 @@ CONFIG_NAME="sdpo"
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
 DATA_PATH="datasets/sciknoweval/biology"
+DATA_PATH="datasets/sciknoweval/biology"
+
 # DATA_PATH="datasets/lcb_v6"
 
 # Hyperparameters (from experiments/run_sdpo_all.sh)
@@ -24,6 +26,7 @@ DONTS_REPROMPT_ON_SELF_SUCCESS=True
 ALPHA=0.5
 TEACHER_MODEL_PATH="Qwen/Qwen2.5-7B-Instruct"
 MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
+ROLLOUT_MAX_MODEL_LEN=18944
 
 # TEACHER_MODEL_PATH="/home/wyu3/.cache/huggingface/hub/models--Qwen--Qwen2.5-7B-Instruct/snapshots/a09a35458c702b33eeacc393d103063234e8bc28"
 INCLUDE_ANOTHER_SOLUTION=False
@@ -81,7 +84,8 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="107361-0-TS-Sci-Bio-${TEACHER_MODEL_PATH}-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
+DATA_NAME="${DATA_PATH##*/}"
+EXP_NAME="107361-0-TS-${DATA_NAME}-${TEACHER_MODEL_PATH}-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
 
 ARGS=(
   "data.train_batch_size=$TRAIN_BATCH_SIZE"
@@ -96,6 +100,8 @@ ARGS=(
   "actor_rollout_ref.rollout.name=vllm"
   "actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE"
   "actor_rollout_ref.rollout.gpu_memory_utilization=0.6"
+  "actor_rollout_ref.rollout.max_model_len=$ROLLOUT_MAX_MODEL_LEN"
+  "actor_rollout_ref.rollout.max_num_batched_tokens=$ROLLOUT_MAX_MODEL_LEN"
   "actor_rollout_ref.model.path=$MODEL_PATH"
   "+actor_rollout_ref.ref.model.path=$TEACHER_MODEL_PATH"
   "actor_rollout_ref.model.use_remove_padding=False"

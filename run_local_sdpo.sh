@@ -11,13 +11,20 @@ CONFIG_NAME="sdpo"
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
 # DATA_PATH="datasets/sciknoweval/biology"
-DATA_PATH="datasets/sciknoweval/chemistry"
+# DATA_PATH="datasets/sciknoweval/chemistry"
 # DATA_PATH="datasets/sciknoweval/physics"
 # DATA_PATH="datasets/sciknoweval/material"
 
 # DATA_PATH="datasets/lcb_v6"
 # DATA_PATH="datasets/G-OPD-Training-Data/Eurus"
 # DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2025"
+# DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2024"
+DATA_PATH="datasets/G-OPD-Training-Data/opd-math"
+# Optional validation override. Useful when training on one dataset but validating
+# on a separate benchmark parquet, e.g. Humaneval+/MBPP+.
+# VAL_DATA_PATH="datasets/humanevalplus/test.parquet"
+# VAL_DATA_PATH="datasets/mbppplus/test.parquet"
+VAL_DATA_PATH="${VAL_DATA_PATH:-}"
 
 # Hyperparameters (from experiments/run_sdpo_all.sh)
 TRAIN_BATCH_SIZE=32
@@ -30,13 +37,17 @@ DONTS_REPROMPT_ON_SELF_SUCCESS=True
 ALPHA=0.5
 # MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
 MODEL_PATH="Qwen/Qwen3-4B-Instruct-2507"
+# MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-4B}"
+ROLLOUT_BACKEND="${ROLLOUT_BACKEND:-vllm}"
+
+
 ROLLOUT_MAX_MODEL_LEN=4096
 
 
-INCLUDE_ANOTHER_SOLUTION=True
-INCLUDE_FAILURE_SOLUTION=True
-SUMMARIZE_SOLUTIONS=False
-SUMMARY_FROM_ALL=False   # 新增
+INCLUDE_ANOTHER_SOLUTION=False
+INCLUDE_FAILURE_SOLUTION=False
+SUMMARIZE_SOLUTIONS=True
+SUMMARY_FROM_ALL=True   # 新增
 SUMMARY_K=8
 MAX_ACTOR_CKPT_TO_KEEP=2
 MAX_CRITIC_CKPT_TO_KEEP=2
@@ -70,6 +81,22 @@ if [ "${ROLLOUT_TP_SIZE}" -gt "${VISIBLE_GPUS}" ]; then
     ROLLOUT_TP_SIZE=${VISIBLE_GPUS}
 fi
 
+if [ "${ROLLOUT_BACKEND}" = "vllm" ] && [[ "${MODEL_PATH}" == Qwen/Qwen3.5-* ]]; then
+    cat <<'EOF'
+Unsupported local combo detected:
+- rollout backend: vllm
+- model: Qwen3.5
+
+This repo's async rollout path uses the vLLM V1 engine, and vllm==0.8.5.post1 does not support
+Qwen3.5 architectures here. Use one of these instead:
+- MODEL_PATH=Qwen/Qwen3-4B-Instruct-2507 ./run_local_sdpo.sh
+- MODEL_PATH=Qwen/Qwen2.5-3B-Instruct ./run_local_sdpo.sh
+- upgrade vllm to a version that supports Qwen3.5 in this async path
+- switch to sglang if your environment supports it: ROLLOUT_BACKEND=sglang ./run_local_sdpo.sh
+EOF
+    exit 1
+fi
+
 # Allow overriding experiment name suffix
 SUFFIX=${1:-"local_sdpo"}
 
@@ -90,7 +117,7 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="107228-0-TF-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
+EXP_NAME="test-math-Success${INCLUDE_ANOTHER_SOLUTION}Fail${INCLUDE_FAILURE_SOLUTION}-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
 CKPT_DIR="/project/flame/wyu3/mopd/${EXP_NAME}"
 
 ARGS=(
@@ -100,6 +127,7 @@ ARGS=(
   "trainer.group_name=SDPO-local"
   "trainer.project_name=sdpo_base"
   "trainer.logger=[console,wandb]"
+  "trainer.val_before_train=True"
   "trainer.test_freq=5"
   "trainer.save_freq=50"
   "trainer.default_local_dir=$CKPT_DIR"
@@ -107,7 +135,7 @@ ARGS=(
   "trainer.max_critic_ckpt_to_keep=$MAX_CRITIC_CKPT_TO_KEEP"
   "trainer.n_gpus_per_node=$N_GPUS_PER_NODE"
   "actor_rollout_ref.rollout.n=$ROLLOUT_BATCH_SIZE"
-  "actor_rollout_ref.rollout.name=vllm"
+  "actor_rollout_ref.rollout.name=$ROLLOUT_BACKEND"
   "actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE"
   "actor_rollout_ref.rollout.gpu_memory_utilization=0.6"
   "actor_rollout_ref.rollout.max_model_len=$ROLLOUT_MAX_MODEL_LEN"
@@ -132,11 +160,17 @@ ARGS=(
   "actor_rollout_ref.rollout.val_kwargs.n=8"
 )
 
+if [ -n "$VAL_DATA_PATH" ]; then
+  ARGS+=("data.val_files=['$PROJECT_ROOT/$VAL_DATA_PATH']")
+fi
+
 echo "----------------------------------------------------------------"
 echo "Starting Local SDPO Training"
 echo "Experiment: $EXP_NAME"
 echo "Data: $DATA_PATH"
+echo "Validation data: ${VAL_DATA_PATH:-${DATA_PATH}/test.parquet}"
 echo "Model: $MODEL_PATH"
+echo "Rollout backend: $ROLLOUT_BACKEND"
 echo "Seed: $SEED"
 echo "Checkpoint dir: $CKPT_DIR"
 echo "Resolved GPUs: visible=${VISIBLE_GPUS}, trainer.n_gpus_per_node=${N_GPUS_PER_NODE}, rollout.tp=${ROLLOUT_TP_SIZE}"

@@ -13,6 +13,7 @@
 # limitations under the License.
 import argparse
 import asyncio
+import copy
 import inspect
 import json
 import logging
@@ -86,6 +87,165 @@ if _VLLM_VERSION >= version.parse("0.12.0"):
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
+
+
+def _patch_transformers_v5_tokenizer_for_vllm() -> None:
+    """Restore a tokenizer attribute removed in transformers v5 but still used by older vLLM."""
+    try:
+        from transformers import PreTrainedTokenizerBase
+    except Exception:
+        return
+
+    if hasattr(PreTrainedTokenizerBase, "all_special_tokens_extended"):
+        return
+
+    @property
+    def all_special_tokens_extended(self):
+        return list(self.all_special_tokens)
+
+    PreTrainedTokenizerBase.all_special_tokens_extended = all_special_tokens_extended
+
+
+def _patch_vllm_cached_tokenizer_for_transformers_v5() -> None:
+    """Normalize vLLM's cached tokenizer fields for transformers v5 tokenizers."""
+    try:
+        from vllm.transformers_utils import tokenizer as vllm_tokenizer_mod
+    except Exception:
+        return
+
+    if getattr(vllm_tokenizer_mod, "_verl_cached_tokenizer_patch", False):
+        return
+
+    def _coerce_int(value: Any) -> Optional[int]:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _get_cached_tokenizer(tokenizer):
+        cached_tokenizer = copy.copy(tokenizer)
+
+        tokenizer_all_special_ids = tokenizer.all_special_ids
+        tokenizer_all_special_tokens = tokenizer.all_special_tokens
+        tokenizer_all_special_tokens_extended = getattr(
+            tokenizer, "all_special_tokens_extended", tokenizer.all_special_tokens
+        )
+        tokenizer_vocab = tokenizer.get_vocab()
+        tokenizer_len = len(tokenizer)
+
+        vocab_ids = [coerced for value in tokenizer_vocab.values() if (coerced := _coerce_int(value)) is not None]
+        max_token_id = max(vocab_ids) if vocab_ids else -1
+
+        vocab_size = _coerce_int(getattr(tokenizer, "vocab_size", None))
+        if vocab_size is not None:
+            max_token_id = max(max_token_id, vocab_size)
+
+        class CachedTokenizer(tokenizer.__class__):  # type: ignore
+            @property
+            def all_special_ids(self) -> list[int]:
+                return tokenizer_all_special_ids
+
+            @property
+            def all_special_tokens(self) -> list[str]:
+                return tokenizer_all_special_tokens
+
+            @property
+            def all_special_tokens_extended(self):
+                return tokenizer_all_special_tokens_extended
+
+            @property
+            def max_token_id(self) -> int:
+                return int(max_token_id)
+
+            def get_vocab(self):
+                return tokenizer_vocab
+
+            def __len__(self) -> int:
+                return tokenizer_len
+
+            def __reduce__(self):
+                return _get_cached_tokenizer, (tokenizer,)
+
+        CachedTokenizer.__name__ = f"Cached{tokenizer.__class__.__name__}"
+        cached_tokenizer.__class__ = CachedTokenizer
+        return cached_tokenizer
+
+    vllm_tokenizer_mod.get_cached_tokenizer = _get_cached_tokenizer
+    vllm_tokenizer_mod._verl_cached_tokenizer_patch = True
+
+
+def _patch_vllm_input_validator_for_transformers_v5() -> None:
+    """Coerce tokenizer.max_token_id to int in vLLM's prompt validator."""
+    try:
+        from vllm.multimodal.processing import EncDecMultiModalProcessor
+        from vllm.v1.engine.processor import Processor
+    except Exception:
+        return
+
+    if getattr(Processor, "_verl_validate_model_input_patch", False):
+        return
+
+    def _validate_model_input(self, prompt_inputs, lora_request, prompt_type):
+        model_config = self.model_config
+        tokenizer = self.tokenizer.get_lora_tokenizer(lora_request)
+
+        prompt_ids = prompt_inputs["prompt_token_ids"]
+        if not prompt_ids:
+            if prompt_type == "encoder" and model_config.is_multimodal_model:
+                pass
+            else:
+                raise ValueError(f"The {prompt_type} prompt cannot be empty")
+
+        try:
+            prompt_ids = [int(token_id) for token_id in prompt_ids]
+        except (TypeError, ValueError) as e:
+            bad_token = next((token_id for token_id in prompt_ids if not isinstance(token_id, int)), None)
+            raise TypeError(f"Invalid prompt_token_ids entry: {bad_token!r}") from e
+
+        prompt_inputs["prompt_token_ids"] = prompt_ids
+        max_input_id = max(prompt_ids, default=0)
+        try:
+            max_token_id = int(tokenizer.max_token_id)
+        except (TypeError, ValueError) as e:
+            raise TypeError(f"Invalid tokenizer.max_token_id={tokenizer.max_token_id!r}") from e
+        if max_input_id > max_token_id:
+            raise ValueError(f"Token id {max_input_id} is out of vocabulary")
+
+        max_prompt_len = self.model_config.max_model_len
+        if len(prompt_ids) > max_prompt_len:
+            if prompt_type == "encoder" and model_config.is_multimodal_model:
+                mm_registry = self.input_preprocessor.mm_registry
+                mm_processor = mm_registry.create_processor(
+                    model_config,
+                    tokenizer=tokenizer,
+                )
+                assert isinstance(mm_processor, EncDecMultiModalProcessor)
+
+                if mm_processor.pad_dummy_encoder_prompt:
+                    return
+
+            if model_config.is_multimodal_model:
+                suggestion = (
+                    "Make sure that `max_model_len` is no smaller than the "
+                    "number of text tokens plus multimodal tokens. For image "
+                    "inputs, the number of image tokens depends on the number "
+                    "of images, and possibly their aspect ratios as well."
+                )
+            else:
+                suggestion = (
+                    "Make sure that `max_model_len` is no smaller than the "
+                    "number of text tokens."
+                )
+
+            raise ValueError(
+                f"The {prompt_type} prompt (length {len(prompt_ids)}) is "
+                f"longer than the maximum model length of {max_prompt_len}. "
+                f"{suggestion}"
+            )
+
+    Processor._validate_model_input = _validate_model_input
+    Processor._verl_validate_model_input_patch = True
+
 
 def _get_supported_serve_flags() -> set[str]:
     cmd_modules = [vllm.entrypoints.cli.serve]
@@ -436,6 +596,10 @@ class vLLMHttpServer:
             await self.run_headless(server_args)
 
     async def run_server(self, args: argparse.Namespace):
+        _patch_transformers_v5_tokenizer_for_vllm()
+        _patch_vllm_cached_tokenizer_for_transformers_v5()
+        _patch_vllm_input_validator_for_transformers_v5()
+
         engine_args = AsyncEngineArgs.from_cli_args(args)
         usage_context = UsageContext.OPENAI_API_SERVER
         vllm_config = engine_args.create_engine_config(usage_context=usage_context)

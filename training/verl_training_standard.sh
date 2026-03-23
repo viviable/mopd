@@ -1,6 +1,6 @@
 #!/bin/bash
 unset VLLM_ATTENTION_BACKEND
-export VLLM_USE_V1=1
+export VLLM_USE_V1=${VLLM_USE_V1:-1}
 export PYTHONBUFFERED=1
 # export RAY_DEBUG=1
 ulimit -c 0

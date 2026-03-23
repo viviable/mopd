@@ -1,7 +1,7 @@
 import argparse
 import numpy as np
 from pathlib import Path
-from datasets import Dataset
+from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 
 from data.format.train import load_train
 from data.format.gpqa import load_gpqa
@@ -108,6 +108,98 @@ def load_dataset_hf(
         )
 
 
+def push_dataset_to_hf(dataset_path: str, hf_dataset_name: str) -> None:
+    dataset_path = Path(dataset_path)
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Dataset path does not exist: {dataset_path}")
+
+    try:
+        ds = load_from_disk(str(dataset_path))
+        print(f"Loaded HF dataset directory from {dataset_path}.")
+    except FileNotFoundError:
+        parquet_files = {}
+        for split in ["train", "validation", "val", "test"]:
+            split_path = dataset_path / f"{split}.parquet"
+            if split_path.exists():
+                normalized_split = "validation" if split == "val" else split
+                parquet_files[normalized_split] = str(split_path)
+
+        if not parquet_files:
+            parquet_files = {
+                file_path.stem: str(file_path)
+                for file_path in sorted(dataset_path.glob("*.parquet"))
+            }
+
+        if not parquet_files:
+            raise FileNotFoundError(
+                f"Directory {dataset_path} is neither a Hugging Face saved dataset nor a parquet dataset directory."
+            )
+
+        loaded_splits = {}
+        all_columns = set()
+        column_features = {}
+        for split_name, split_file in parquet_files.items():
+            split_ds = load_dataset("parquet", data_files={split_name: split_file})[split_name]
+            loaded_splits[split_name] = split_ds
+            all_columns.update(split_ds.column_names)
+            for column_name, feature in split_ds.features.items():
+                column_features.setdefault(column_name, feature)
+
+        def _default_value_for_feature(feature):
+            dtype = getattr(feature, "dtype", None)
+            if dtype == "string":
+                return ""
+            if dtype and dtype.startswith("int"):
+                return 0
+            if dtype and dtype.startswith("float"):
+                return 0.0
+            if dtype == "bool":
+                return False
+            if isinstance(feature, dict):
+                return {
+                    key: _default_value_for_feature(sub_feature)
+                    for key, sub_feature in feature.items()
+                }
+            if hasattr(feature, "feature"):
+                return []
+            return None
+
+        aligned_splits = {}
+        ordered_columns = sorted(all_columns)
+        for split_name, split_ds in loaded_splits.items():
+            missing_columns = [column for column in ordered_columns if column not in split_ds.column_names]
+            for column in missing_columns:
+                if column == "id":
+                    default_value = "DeepMath"
+                else:
+                    default_value = _default_value_for_feature(column_features[column])
+                split_ds = split_ds.add_column(column, [default_value] * len(split_ds))
+            aligned_splits[split_name] = split_ds.select_columns(ordered_columns)
+
+        ds = DatasetDict(aligned_splits)
+        print(f"Loaded parquet dataset from {dataset_path} with splits: {list(parquet_files.keys())}.")
+
+    print(f"Pushing dataset to hub: {hf_dataset_name}")
+    if isinstance(ds, (Dataset, DatasetDict)):
+        ds.push_to_hub(hf_dataset_name)
+    else:
+        raise TypeError(f"Unsupported dataset object type: {type(ds)}")
+    print("Push complete.")
+
+
+def download_dataset_from_hf(hf_dataset_name: str, output_dir: str) -> None:
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    ds = load_dataset(hf_dataset_name)
+    print(f"Loaded dataset from hub: {hf_dataset_name}")
+    for split_name, split_ds in ds.items():
+        normalized_split = "validation" if split_name == "val" else split_name
+        split_output_path = output_path / f"{normalized_split}.parquet"
+        split_ds.to_parquet(str(split_output_path))
+        print(f"Saved {normalized_split} split to {split_output_path}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Produce sorted dataset that can be used for training on most relevant questions."
@@ -144,12 +236,43 @@ if __name__ == "__main__":
         "--seed", type=int, default=42,
         help="Seed for the dataset."
     )
-    args = parser.parse_args()
-    load_dataset_hf(
-        dataset_name=args.dataset_name,
-        output_path=args.output_path,
-        start_idx=args.start_idx,
-        num_el=args.num_el,
-        category=args.category,
-        embeddings_file=args.embeddings_file,
+    parser.add_argument(
+        "--push_dataset_path", type=str, default=None,
+        help="Path to a dataset saved on disk with save_to_disk."
     )
+    parser.add_argument(
+        "--push_hf_dataset_name", type=str, default=None,
+        help="HF dataset name to push the on-disk dataset to."
+    )
+    parser.add_argument(
+        "--download_hf_dataset_name", type=str, default=None,
+        help="HF dataset name to download from the hub."
+    )
+    parser.add_argument(
+        "--download_output_dir", type=str, default=None,
+        help="Local directory to save downloaded splits as <split>.parquet."
+    )
+    args = parser.parse_args()
+    if args.download_hf_dataset_name is not None or args.download_output_dir is not None:
+        if args.download_hf_dataset_name is None or args.download_output_dir is None:
+            raise ValueError("Both --download_hf_dataset_name and --download_output_dir must be provided together.")
+        download_dataset_from_hf(
+            hf_dataset_name=args.download_hf_dataset_name,
+            output_dir=args.download_output_dir,
+        )
+    elif args.push_dataset_path is not None or args.push_hf_dataset_name is not None:
+        if args.push_dataset_path is None or args.push_hf_dataset_name is None:
+            raise ValueError("Both --push_dataset_path and --push_hf_dataset_name must be provided together.")
+        push_dataset_to_hf(
+            dataset_path=args.push_dataset_path,
+            hf_dataset_name=args.push_hf_dataset_name,
+        )
+    else:
+        load_dataset_hf(
+            dataset_name=args.dataset_name,
+            output_path=args.output_path,
+            start_idx=args.start_idx,
+            num_el=args.num_el,
+            category=args.category,
+            embeddings_file=args.embeddings_file,
+        )

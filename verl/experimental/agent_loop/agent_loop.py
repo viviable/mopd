@@ -54,6 +54,39 @@ logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
+def _normalize_prompt_token_ids(prompt_ids: Any) -> list[int]:
+    """Normalize HF chat-template outputs to a flat list of integer token ids."""
+    if isinstance(prompt_ids, torch.Tensor):
+        prompt_ids = prompt_ids.tolist()
+
+    if hasattr(prompt_ids, "input_ids"):
+        prompt_ids = prompt_ids.input_ids
+    elif isinstance(prompt_ids, dict):
+        if "input_ids" not in prompt_ids:
+            raise TypeError(f"apply_chat_template returned dict without input_ids: {type(prompt_ids)}")
+        prompt_ids = prompt_ids["input_ids"]
+
+    if isinstance(prompt_ids, torch.Tensor):
+        prompt_ids = prompt_ids.tolist()
+
+    # HF may return batch-shaped outputs like [[...]] for a single prompt.
+    while isinstance(prompt_ids, list) and prompt_ids and isinstance(prompt_ids[0], (list, tuple, torch.Tensor)):
+        if len(prompt_ids) != 1:
+            raise TypeError(f"Expected a single prompt, got batch-shaped prompt ids of length {len(prompt_ids)}")
+        prompt_ids = prompt_ids[0]
+        if isinstance(prompt_ids, torch.Tensor):
+            prompt_ids = prompt_ids.tolist()
+
+    if not isinstance(prompt_ids, list):
+        raise TypeError(f"Unsupported prompt_ids type: {type(prompt_ids)}")
+
+    try:
+        return [int(token_id) for token_id in prompt_ids]
+    except (TypeError, ValueError) as e:
+        bad_token = next((token_id for token_id in prompt_ids if not isinstance(token_id, int)), None)
+        raise TypeError(f"Invalid prompt token id: {bad_token!r}") from e
+
+
 class AsyncLLMServerManager:
     """
     A class to manage multiple OpenAI compatible LLM servers. This class provides
@@ -302,6 +335,8 @@ class AgentLoopBase(ABC):
                     **self.apply_chat_template_kwargs,
                 ),
             )
+
+        prompt_ids = _normalize_prompt_token_ids(prompt_ids)
 
         if remove_system_prompt:
             prompt_ids = prompt_ids[len(self.system_prompt) :]

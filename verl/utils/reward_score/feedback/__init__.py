@@ -11,7 +11,7 @@ def compute_score(
     ground_truth: str,
     extra_info: dict = None,
 ) -> dict:
-    if data_source in ["code", "livecodebench", "humanevalplus"]:
+    if data_source in ["code", "livecodebench", "humanevalplus", "mbppplus"]:
         results = code.compute_score(solution_str, ground_truth, extra_info, sparse_rewards=True, max_test_cases=None)
     elif data_source in ["math", "math500", "dapo_math", "gsm8k"]:
         results = math.compute_score(solution_str, ground_truth, extra_info)

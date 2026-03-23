@@ -11,7 +11,10 @@ CONFIG_NAME="baseline_grpo"
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
 # DATA_PATH="datasets/sciknoweval/biology"
-DATA_PATH="datasets/lcb_v6"
+# DATA_PATH="datasets/sciknoweval/chemistry"
+# DATA_PATH="datasets/sciknoweval/physics"
+DATA_PATH="datasets/sciknoweval/material"
+# DATA_PATH="datasets/lcb_v6"
 
 # Hyperparameters (from experiments/run_baseline_grpo_all.sh)
 TRAIN_BATCH_SIZE=32
@@ -70,7 +73,7 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="105920-1-LcbV6-GRPO-mbs${MINI_BATCH_SIZE}-train${TRAIN_BATCH_SIZE}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-${MODEL_NAME}-${SUFFIX}"
+EXP_NAME="test-${DATA_PATH##*/}-GRPO-mbs${MINI_BATCH_SIZE}-train${TRAIN_BATCH_SIZE}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-${MODEL_NAME}-${SUFFIX}"
 RUN_TS=$(date +%Y-%m-%d_%H-%M-%S)
 LOG_DIR="$PROJECT_ROOT/logs/local_runs"
 LOG_FILE="$LOG_DIR/${EXP_NAME}-${RUN_TS}.log"
@@ -83,6 +86,7 @@ data.seed=$SEED \
 trainer.group_name=GRPO-local \
 trainer.project_name=sdpo_base \
 trainer.logger=[console,wandb] \
+trainer.val_before_train=True \
 trainer.test_freq=20 \
 trainer.n_gpus_per_node=$N_GPUS_PER_NODE \
 actor_rollout_ref.actor.optim.lr_warmup_steps=10 \

@@ -17,10 +17,24 @@ from typing import Optional
 
 import torch
 from PIL import Image
-from qwen_vl_utils import fetch_image, fetch_video
+
+try:
+    from qwen_vl_utils import fetch_image, fetch_video
+except ImportError:
+    fetch_image = None
+    fetch_video = None
+
+
+def _require_qwen_vl_utils() -> None:
+    if fetch_image is None or fetch_video is None:
+        raise ImportError(
+            "qwen_vl_utils is required for image/video dataset processing. "
+            "Install it in the active environment or avoid multimodal inputs."
+        )
 
 
 def process_image(image: dict | Image.Image, image_patch_size: int = 14) -> Image.Image:
+    _require_qwen_vl_utils()
     if isinstance(image, Image.Image):
         return image.convert("RGB")
 
@@ -73,6 +87,7 @@ def process_video(
 
     Add video sample FPS in a future MR
     """
+    _require_qwen_vl_utils()
 
     if not isinstance(video, dict) or "video" not in video:
         raise NotImplementedError(VIDEO_FORMAT_HELP)

@@ -1,0 +1,33 @@
+{
+  "input_paths": [
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/1.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/2.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/3.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/4.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/5.jsonl"
+  ],
+  "success_threshold": 1.0,
+  "max_prompts": 3,
+  "max_responses_per_prompt": 4,
+  "min_responses_per_prompt": 2,
+  "seed": 42,
+  "aggregate": {
+    "prompt_count": 3,
+    "response_count": 12,
+    "bucket_prompt_counts": {
+      "easy": 1,
+      "hard": 1,
+      "medium": 1
+    },
+    "mean_responses_per_prompt": 4.0,
+    "mean_successes_per_prompt": 1.6666666666666667,
+    "summary_tag_rate": 0.5,
+    "feedback_rate": 0.0,
+    "candidate_count": 12,
+    "evidence_count": 24,
+    "evidence_type_counts": {
+      "response_full": 12,
+      "summary": 12
+    }
+  }
+}

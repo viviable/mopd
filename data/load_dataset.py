@@ -1,5 +1,4 @@
 import argparse
-import numpy as np
 from pathlib import Path
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 
@@ -13,6 +12,8 @@ from data.utils.data_handling import write_hf_to_json
 
 
 def _add_embeddings(ds, embeddings_file = None):
+    import numpy as np
+
     if not embeddings_file is None:
         embeddings = np.load(embeddings_file)
         ds = ds.add_column("embedding", [embeddings[i] for i in range(len(ds))])

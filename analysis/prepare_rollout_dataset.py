@@ -204,6 +204,7 @@ def sample_groups(
 def build_candidate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     candidates = []
     for row in rows:
+        prompt_failure_count = row["prompt_group_size"] - row["prompt_success_count"]
         candidates.append(
             {
                 "prompt_id": row["prompt_id"],
@@ -226,6 +227,10 @@ def build_candidate_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "difficulty_bucket": row["difficulty_bucket"],
                 "prompt_group_size": row["prompt_group_size"],
                 "prompt_success_count": row["prompt_success_count"],
+                "prompt_failure_count": prompt_failure_count,
+                "prompt_has_primary_success": row["prompt_success_count"] >= 1,
+                "prompt_has_another_success": row["prompt_success_count"] >= 2,
+                "prompt_has_failure_peer": prompt_failure_count >= 1,
                 "source_file": row["source_file"],
                 "source_line": row["source_line"],
                 "rollout_step": row["rollout_step"],

@@ -134,3 +134,7 @@ outputs
 other_implementation
 Dockerfile.gh200-ofi
 DOCKER_PLAN_GH200.md
+
+# local analysis outputs (can be very large)
+analysis_outputs/chemistry_context_variants.jsonl
+analysis_outputs/chemistry_context_variants_v2.jsonl

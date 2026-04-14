@@ -11,20 +11,22 @@ CONFIG_NAME="sdpo"
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
 # DATA_PATH="datasets/sciknoweval/biology"
-# DATA_PATH="datasets/sciknoweval/chemistry"
+DATA_PATH="datasets/sciknoweval/chemistry"
 # DATA_PATH="datasets/sciknoweval/physics"
 # DATA_PATH="datasets/sciknoweval/material"
 
 # DATA_PATH="datasets/lcb_v6"
 # DATA_PATH="datasets/G-OPD-Training-Data/Eurus"
+# DATA_PATH="datasets/gsm8k"
 # DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2025"
 # DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2024"
-DATA_PATH="datasets/G-OPD-Training-Data/opd-math"
+# DATA_PATH="datasets/G-OPD-Training-Data/opd-math"
 # Optional validation override. Useful when training on one dataset but validating
 # on a separate benchmark parquet, e.g. Humaneval+/MBPP+.
-# VAL_DATA_PATH="datasets/humanevalplus/test.parquet"
+# VAL_DATA_PATH="datasets/humanevalplus/humanevalplus/test.parquet"
+# VAL_DATA_PATH="datasets/gsm8k/test.parquet"
 # VAL_DATA_PATH="datasets/mbppplus/test.parquet"
-VAL_DATA_PATH="${VAL_DATA_PATH:-}"
+# VAL_DATA_PATH="${VAL_DATA_PATH:-}"
 
 # Hyperparameters (from experiments/run_sdpo_all.sh)
 TRAIN_BATCH_SIZE=32
@@ -47,8 +49,9 @@ ROLLOUT_MAX_MODEL_LEN=4096
 INCLUDE_ANOTHER_SOLUTION=False
 INCLUDE_FAILURE_SOLUTION=False
 SUMMARIZE_SOLUTIONS=True
-SUMMARY_FROM_ALL=True   # 新增
+SUMMARY_FROM_ALL=True
 SUMMARY_K=8
+
 MAX_ACTOR_CKPT_TO_KEEP=2
 MAX_CRITIC_CKPT_TO_KEEP=2
 
@@ -108,6 +111,18 @@ SUFFIX=${1:-"local_sdpo"}
 export PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export PYTHONPATH=$PROJECT_ROOT:$PYTHONPATH
 
+# Bootstrap the canonical GSM8K parquet layout when requested.
+if [ "$DATA_PATH" = "datasets/gsm8k" ]; then
+    GSM8K_TRAIN_FILE="$PROJECT_ROOT/$DATA_PATH/train.parquet"
+    GSM8K_TEST_FILE="$PROJECT_ROOT/$DATA_PATH/test.parquet"
+
+    if [ ! -f "$GSM8K_TRAIN_FILE" ] || [ ! -f "$GSM8K_TEST_FILE" ]; then
+        echo "GSM8K parquet files not found under $PROJECT_ROOT/$DATA_PATH. Generating them from openai/gsm8k..."
+        mkdir -p "$PROJECT_ROOT/$DATA_PATH"
+        python "$PROJECT_ROOT/examples/data_preprocess/gsm8k.py" --local_save_dir "$PROJECT_ROOT/$DATA_PATH"
+    fi
+fi
+
 # Define USER for Hydra config (required by user.yaml)
 export USER=${USER:-$(whoami)}
 export WANDB_ENTITY="safety"
@@ -117,8 +132,9 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="test-math-Success${INCLUDE_ANOTHER_SOLUTION}Fail${INCLUDE_FAILURE_SOLUTION}-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
+EXP_NAME="summary_from_all-Success${INCLUDE_ANOTHER_SOLUTION}Fail${INCLUDE_FAILURE_SOLUTION}-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
 CKPT_DIR="/project/flame/wyu3/mopd/${EXP_NAME}"
+ROLLOUT_DATA_DIR="${ROLLOUT_DATA_DIR:-/project/flame/wyu3/mopd/rollout/${EXP_NAME}}"
 
 ARGS=(
   "data.train_batch_size=$TRAIN_BATCH_SIZE"
@@ -155,6 +171,7 @@ ARGS=(
   "actor_rollout_ref.actor.self_distillation.include_another_solution=$INCLUDE_ANOTHER_SOLUTION"
   "actor_rollout_ref.actor.self_distillation.include_failure_solution=$INCLUDE_FAILURE_SOLUTION"
   "actor_rollout_ref.actor.self_distillation.summarize_solutions=$SUMMARIZE_SOLUTIONS"
+  "actor_rollout_ref.actor.self_distillation.summary_from_all=$SUMMARY_FROM_ALL"
   "actor_rollout_ref.actor.self_distillation.summary_k=$SUMMARY_K"
   "actor_rollout_ref.actor.optim.lr_warmup_steps=10"
   "actor_rollout_ref.rollout.val_kwargs.n=8"
@@ -162,6 +179,10 @@ ARGS=(
 
 if [ -n "$VAL_DATA_PATH" ]; then
   ARGS+=("data.val_files=['$PROJECT_ROOT/$VAL_DATA_PATH']")
+fi
+
+if [ -n "$ROLLOUT_DATA_DIR" ]; then
+  ARGS+=("trainer.rollout_data_dir=$ROLLOUT_DATA_DIR")
 fi
 
 echo "----------------------------------------------------------------"
@@ -173,6 +194,8 @@ echo "Model: $MODEL_PATH"
 echo "Rollout backend: $ROLLOUT_BACKEND"
 echo "Seed: $SEED"
 echo "Checkpoint dir: $CKPT_DIR"
+echo "Summary from all: $SUMMARY_FROM_ALL"
+echo "Rollout data dir: ${ROLLOUT_DATA_DIR:-disabled}"
 echo "Resolved GPUs: visible=${VISIBLE_GPUS}, trainer.n_gpus_per_node=${N_GPUS_PER_NODE}, rollout.tp=${ROLLOUT_TP_SIZE}"
 echo "----------------------------------------------------------------"
 

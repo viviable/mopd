@@ -7,6 +7,24 @@ from pathlib import Path
 from typing import Any
 
 
+CONDITION_TO_REQUIRED_SECTIONS = {
+    "solution": {"solution"},
+    "another_solution": {"another_solution"},
+    "solution+another_solution": {"solution", "another_solution"},
+    "failure_solution": {"failure_solution"},
+    "solution+failure_solution": {"solution", "failure_solution"},
+    "summary_success_k2": {"summary"},
+    "solution+summary_success_k2": {"solution", "summary"},
+    "solution+feedback": {"solution", "feedback"},
+    "solution+feedback+summary_all_k2": {"solution", "summary"},
+    "feedback": {"feedback"},
+    "random_summary_control": {"summary"},
+    "base": set(),
+    "base_raw": set(),
+    "base_reprompt": set(),
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compute offline teacher-signal ranking metrics.")
     parser.add_argument("--input", required=True, help="Teacher-scored JSONL file.")
@@ -68,14 +86,12 @@ def kendall_tau(x: list[float], y: list[float]) -> float:
         return 0.0
     concordant = 0
     discordant = 0
-    ties = 0
     n = len(x)
     for i in range(n):
         for j in range(i + 1, n):
             dx = x[i] - x[j]
             dy = y[i] - y[j]
             if dx == 0 or dy == 0:
-                ties += 1
                 continue
             if dx * dy > 0:
                 concordant += 1
@@ -135,6 +151,20 @@ def group_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, list[dict[str,
     return grouped
 
 
+def group_rows_by_target_type(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, dict[str, list[dict[str, Any]]]]]:
+    grouped: dict[str, dict[str, dict[str, list[dict[str, Any]]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
+    for row in rows:
+        target_type = row.get("target_type", "unknown")
+        condition = row["condition"]
+        prompt_id = row["prompt_id"]
+        grouped[target_type][condition][prompt_id].append(row)
+    return grouped
+
+
 def compute_condition_metrics(rows_by_prompt: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     per_prompt_metrics = []
     prompt_lengths = []
@@ -157,9 +187,9 @@ def compute_condition_metrics(rows_by_prompt: dict[str, list[dict[str, Any]]]) -
             }
         )
         prompt_lengths.extend(
-            float(row["teacher_prompt_length"])
+            float(row["teacher_prompt_len"])
             for row in rows
-            if row.get("teacher_prompt_length") is not None
+            if row.get("teacher_prompt_len") is not None
         )
         trunc_flags.extend(
             1.0 if row.get("teacher_prompt_truncated") else 0.0
@@ -194,12 +224,66 @@ def compute_condition_metrics(rows_by_prompt: dict[str, list[dict[str, Any]]]) -
     }
 
 
+def required_sections_for_condition(condition: str) -> set[str]:
+    return CONDITION_TO_REQUIRED_SECTIONS.get(condition, set())
+
+
+def is_effective_row(row: dict[str, Any]) -> bool:
+    required_sections = required_sections_for_condition(row["condition"])
+    if not required_sections:
+        return True
+    sections_used = row.get("sections_used", {})
+    return all(bool(sections_used.get(section, False)) for section in required_sections)
+
+
 def validate_rows(rows: list[dict[str, Any]]) -> None:
-    required = {"condition", "prompt_id", "response_id", "teacher_score", "reward", "success"}
+    required = {"condition", "prompt_id", "target_id", "teacher_score", "reward", "success"}
     for idx, row in enumerate(rows, start=1):
         missing = sorted(required - set(row))
         if missing:
             raise ValueError(f"Row {idx} is missing required fields: {missing}")
+
+
+def add_effective_flags(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for row in rows:
+        new_row = dict(row)
+        new_row["effective_for_condition"] = is_effective_row(row)
+        out.append(new_row)
+    return out
+
+
+def compute_split(grouped_rows: dict[str, dict[str, list[dict[str, Any]]]]) -> dict[str, Any]:
+    return {
+        condition: compute_condition_metrics(rows_by_prompt)
+        for condition, rows_by_prompt in sorted(grouped_rows.items())
+    }
+
+
+def build_paired_subset(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    grouped = group_rows_by_target_type(rows)
+    out: dict[str, Any] = {}
+    for target_type, by_condition in sorted(grouped.items()):
+        prompt_sets = [set(rows_by_prompt) for rows_by_prompt in by_condition.values()]
+        if not prompt_sets:
+            common_prompts: set[str] = set()
+        else:
+            common_prompts = set.intersection(*prompt_sets)
+
+        paired_grouped = {
+            condition: {
+                prompt_id: rows_by_prompt[prompt_id]
+                for prompt_id in sorted(common_prompts)
+                if prompt_id in rows_by_prompt
+            }
+            for condition, rows_by_prompt in sorted(by_condition.items())
+        }
+
+        out[target_type] = {
+            "paired_prompt_count": len(common_prompts),
+            "conditions": compute_split(paired_grouped),
+        }
+    return out
 
 
 def write_json(path: Path, obj: dict[str, Any]) -> None:
@@ -213,12 +297,39 @@ def main() -> int:
     args = parse_args()
     rows = read_jsonl(Path(args.input))
     validate_rows(rows)
-    grouped = group_rows(rows)
+    rows = add_effective_flags(rows)
+
+    all_grouped = group_rows(rows)
+    effective_rows = [row for row in rows if row["effective_for_condition"]]
+    effective_grouped = group_rows(effective_rows)
+
+    all_counts = defaultdict(int)
+    effective_counts = defaultdict(int)
+    for row in rows:
+        all_counts[row["condition"]] += 1
+        if row["effective_for_condition"]:
+            effective_counts[row["condition"]] += 1
+
     result = {
         "input": args.input,
-        "conditions": {
-            condition: compute_condition_metrics(rows_by_prompt)
-            for condition, rows_by_prompt in sorted(grouped.items())
+        "sample_sets": {
+            "all_samples": {
+                "description": "All scored samples, including rows where the requested context did not activate.",
+                "conditions": compute_split(all_grouped),
+                "paired_by_target_type": build_paired_subset(rows),
+            },
+            "effective_only": {
+                "description": "Only scored samples where the requested context sections were actually present.",
+                "conditions": compute_split(effective_grouped),
+                "paired_by_target_type": build_paired_subset(effective_rows),
+            },
+        },
+        "condition_sample_counts": {
+            condition: {
+                "all_samples": all_counts[condition],
+                "effective_only": effective_counts[condition],
+            }
+            for condition in sorted(set(all_counts) | set(effective_counts))
         },
     }
     write_json(Path(args.output), result)

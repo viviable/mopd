@@ -180,6 +180,8 @@ self_distillation:
   summary_tag: summary
   summary_instruction: "\n\nAfter your answer, briefly summarize your key approach in one sentence inside <summary> tags, e.g. <summary>...</summary>."
   summary_item_template: "\nSummary of another successful solution:\n\n{summary_text}\n\n"
+  summary_from_all: False
+  summary_item_template_failed: "\nSummary of another unsuccessful solution:\n\n{summary_text}\n\n"
 
 # Constant C in Dual-clip PPO; clips when advantage < 0 and ratio > C
 clip_ratio_c: 3.0

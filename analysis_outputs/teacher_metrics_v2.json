@@ -1,0 +1,293 @@
+{
+  "input": "/home/wyu3/workspace/opd/analysis_outputs/chemistry_teacher_scores.jsonl",
+  "sample_sets": {
+    "all_samples": {
+      "description": "All scored samples, including rows where the requested context did not activate.",
+      "conditions": {
+        "another_solution": {
+          "count_prompts": 40,
+          "mean_spearman": 0.04507387671367415,
+          "mean_kendall_tau": 0.046875,
+          "pairwise_accuracy": 0.2984375,
+          "success_auc": 0.2984375,
+          "top1_hit_rate": 0.725,
+          "mean_prompt_length": 1294.3185483870968,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.17206180040292132,
+              "mean_kendall_tau": -0.1875,
+              "pairwise_accuracy": 0.22767857142857142,
+              "success_auc": 0.22767857142857142,
+              "top1_hit_rate": 0.5714285714285714
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.32398617493752807,
+              "mean_kendall_tau": 0.34615384615384615,
+              "pairwise_accuracy": 0.6730769230769231,
+              "success_auc": 0.6730769230769231,
+              "top1_hit_rate": 0.6153846153846154
+            }
+          }
+        },
+        "base": {
+          "count_prompts": 40,
+          "mean_spearman": 0.025,
+          "mean_kendall_tau": 0.025,
+          "pairwise_accuracy": 0.275,
+          "success_auc": 0.2875,
+          "top1_hit_rate": 0.75,
+          "mean_prompt_length": 307.0806451612903,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.14285714285714285,
+              "mean_kendall_tau": -0.14285714285714285,
+              "pairwise_accuracy": 0.21428571428571427,
+              "success_auc": 0.25,
+              "top1_hit_rate": 0.6428571428571429
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.23076923076923078,
+              "mean_kendall_tau": 0.23076923076923078,
+              "pairwise_accuracy": 0.6153846153846154,
+              "success_auc": 0.6153846153846154,
+              "top1_hit_rate": 0.6153846153846154
+            }
+          }
+        },
+        "failure_solution": {
+          "count_prompts": 40,
+          "mean_spearman": -0.4578400768071207,
+          "mean_kendall_tau": -0.48046875,
+          "pairwise_accuracy": 0.034765625,
+          "success_auc": 0.034765625,
+          "top1_hit_rate": 0.45,
+          "mean_prompt_length": 2110.0241935483873,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.5612187577603318,
+              "mean_kendall_tau": -0.5892857142857143,
+              "pairwise_accuracy": 0.026785714285714284,
+              "success_auc": 0.026785714285714284,
+              "top1_hit_rate": 0.35714285714285715
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": -0.8043492664338602,
+              "mean_kendall_tau": -0.84375,
+              "pairwise_accuracy": 0.078125,
+              "success_auc": 0.078125,
+              "top1_hit_rate": 0.0
+            }
+          }
+        },
+        "solution": {
+          "count_prompts": 40,
+          "mean_spearman": 0.469100301774929,
+          "mean_kendall_tau": 0.49296875,
+          "pairwise_accuracy": 0.521484375,
+          "success_auc": 0.521484375,
+          "top1_hit_rate": 1.0,
+          "mean_prompt_length": 1853.7983870967741,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": 0.5099226926847877,
+              "mean_kendall_tau": 0.5357142857142857,
+              "pairwise_accuracy": 0.5892857142857143,
+              "success_auc": 0.5892857142857143,
+              "top1_hit_rate": 1.0
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.894238028723856,
+              "mean_kendall_tau": 0.9399038461538461,
+              "pairwise_accuracy": 0.9699519230769231,
+              "success_auc": 0.9699519230769231,
+              "top1_hit_rate": 1.0
+            }
+          }
+        },
+        "solution+another_solution": {
+          "count_prompts": 40,
+          "mean_spearman": 0.4580738304094812,
+          "mean_kendall_tau": 0.49296875,
+          "pairwise_accuracy": 0.521484375,
+          "success_auc": 0.521484375,
+          "top1_hit_rate": 1.0,
+          "mean_prompt_length": 2624.8669354838707,
+          "truncation_rate": 0.11088709677419355,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": 0.49376439902447505,
+              "mean_kendall_tau": 0.5357142857142857,
+              "pairwise_accuracy": 0.5892857142857143,
+              "success_auc": 0.5892857142857143,
+              "top1_hit_rate": 1.0
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.8777116638489688,
+              "mean_kendall_tau": 0.9399038461538461,
+              "pairwise_accuracy": 0.9699519230769231,
+              "success_auc": 0.9699519230769231,
+              "top1_hit_rate": 1.0
+            }
+          }
+        },
+        "solution+failure_solution": {
+          "count_prompts": 40,
+          "mean_spearman": -0.0851740022291879,
+          "mean_kendall_tau": -0.09296875,
+          "pairwise_accuracy": 0.228515625,
+          "success_auc": 0.228515625,
+          "top1_hit_rate": 0.625,
+          "mean_prompt_length": 3159.6431451612902,
+          "truncation_rate": 0.21169354838709678,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.07975476799371739,
+              "mean_kendall_tau": -0.08705357142857142,
+              "pairwise_accuracy": 0.2779017857142857,
+              "success_auc": 0.2779017857142857,
+              "top1_hit_rate": 0.5714285714285714
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": -0.1761841028658056,
+              "mean_kendall_tau": -0.19230769230769232,
+              "pairwise_accuracy": 0.40384615384615385,
+              "success_auc": 0.40384615384615385,
+              "top1_hit_rate": 0.3076923076923077
+            }
+          }
+        }
+      }
+    },
+    "effective_only": {
+      "description": "Only scored samples where the requested context sections were actually present.",
+      "conditions": {
+        "base": {
+          "count_prompts": 40,
+          "mean_spearman": 0.025,
+          "mean_kendall_tau": 0.025,
+          "pairwise_accuracy": 0.275,
+          "success_auc": 0.2875,
+          "top1_hit_rate": 0.75,
+          "mean_prompt_length": 307.0806451612903,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.14285714285714285,
+              "mean_kendall_tau": -0.14285714285714285,
+              "pairwise_accuracy": 0.21428571428571427,
+              "success_auc": 0.25,
+              "top1_hit_rate": 0.6428571428571429
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.23076923076923078,
+              "mean_kendall_tau": 0.23076923076923078,
+              "pairwise_accuracy": 0.6153846153846154,
+              "success_auc": 0.6153846153846154,
+              "top1_hit_rate": 0.6153846153846154
+            }
+          }
+        }
+      }
+    }
+  },
+  "condition_sample_counts": {
+    "another_solution": {
+      "all_samples": 496,
+      "effective_only": 0
+    },
+    "base": {
+      "all_samples": 496,
+      "effective_only": 496
+    },
+    "failure_solution": {
+      "all_samples": 496,
+      "effective_only": 0
+    },
+    "solution": {
+      "all_samples": 496,
+      "effective_only": 0
+    },
+    "solution+another_solution": {
+      "all_samples": 496,
+      "effective_only": 0
+    },
+    "solution+failure_solution": {
+      "all_samples": 496,
+      "effective_only": 0
+    }
+  }
+}

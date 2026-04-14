@@ -27,7 +27,17 @@ The scripts here focus on the first question.
 - `build_context_variants.py`
   - Reads `candidate_responses.jsonl` and `evidence_items.jsonl`.
   - Builds condition-specific teacher contexts.
+  - Supports both:
+    - `base_raw`: plain prompt only
+    - `base_reprompt`: same reprompt shell with all optional sections empty
   - Emits `context_variants.jsonl` with assembled prompt text and evidence provenance.
+- `build_target_responses.py`
+  - Builds `target_responses.jsonl`.
+  - Supports student-success, student-failure, and optional strong-success targets.
+- `score_teacher_contexts.py`
+  - Joins context variants with target responses.
+  - Computes teacher conditional logprobs for each `(variant, target)` pair.
+  - Emits `teacher_scores.jsonl`.
 - `compute_teacher_signal_metrics.py`
   - Reads teacher-scored candidate data.
   - Computes ranking metrics by condition.
@@ -62,7 +72,8 @@ The scripts here focus on the first question.
 4. Build context variants.
    - Use `build_context_variants.py`.
    - Recommended minimum set:
-     - `base`
+     - `base_raw`
+     - `base_reprompt`
      - `solution`
      - `feedback`
      - `summary_success_k2`
@@ -111,7 +122,8 @@ The scripts here focus on the first question.
 
 10. Only proceed to online training if offline ranking improves.
    - Recommended first training comparison:
-     - `base`
+     - `base_raw`
+     - `base_reprompt`
      - `summary`
      - `key_step`
 

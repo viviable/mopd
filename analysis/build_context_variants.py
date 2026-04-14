@@ -49,7 +49,13 @@ def read_variant_config(path: str | None) -> dict[str, Any]:
             },
             "variants": [
                 {"name": "base"},
+                {"name": "base_raw"},
+                {"name": "base_reprompt", "force_reprompt": True},
                 {"name": "solution", "include_solution": True},
+                {"name": "another_solution", "include_another_solution": True},
+                {"name": "solution+another_solution", "include_solution": True, "include_another_solution": True},
+                {"name": "failure_solution", "include_failure_solution": True},
+                {"name": "solution+failure_solution", "include_solution": True, "include_failure_solution": True},
                 {"name": "feedback", "include_feedback": True},
                 {"name": "summary_success_k2", "include_summary": True, "summary_k": 2},
                 {"name": "solution+feedback", "include_solution": True, "include_feedback": True},
@@ -217,6 +223,14 @@ def assemble_reprompt(
     )
 
 
+def should_use_reprompt(variant: dict[str, Any], sections_used: dict[str, bool]) -> bool:
+    if variant.get("force_raw_prompt", False):
+        return False
+    if variant.get("force_reprompt", False):
+        return True
+    return any(sections_used.values())
+
+
 def build_variant_rows(
     candidates: list[dict[str, Any]],
     evidence_index: dict[str, dict[str, dict[str, Any]]],
@@ -323,7 +337,7 @@ def build_variant_rows(
                     evidence_ids.extend(summary_evidence_ids)
                     sections_used["summary"] = True
 
-            if any(sections_used.values()):
+            if should_use_reprompt(variant, sections_used):
                 assembled_context_text = assemble_reprompt(
                     prompt=candidate["prompt"],
                     solution_section=solution_section,
@@ -346,6 +360,8 @@ def build_variant_rows(
                     "success": candidate["success"],
                     "difficulty_bucket": candidate["difficulty_bucket"],
                     "variant_spec": {
+                        "force_reprompt": bool(variant.get("force_reprompt", False)),
+                        "force_raw_prompt": bool(variant.get("force_raw_prompt", False)),
                         "include_solution": bool(variant.get("include_solution", False)),
                         "include_another_solution": bool(variant.get("include_another_solution", False)),
                         "include_failure_solution": bool(variant.get("include_failure_solution", False)),

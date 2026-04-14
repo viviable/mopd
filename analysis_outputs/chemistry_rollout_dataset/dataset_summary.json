@@ -1,0 +1,49 @@
+{
+  "input_paths": [
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/1.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/10.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/11.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/12.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/13.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/14.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/15.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/16.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/17.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/18.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/19.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/2.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/20.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/21.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/3.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/4.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/5.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/6.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/7.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/8.jsonl",
+    "/project/flame/wyu3/mopd/rollout/summary_from_all-SuccessFalseFailFalse-chemistry-SDPO-train32-alpha0.5-rollout8-lr1e-5-lambda0.0-clip_adv_highnull-drossTrue-Qwen-Qwen3-4B-Instruct-2507-local_sdpo/9.jsonl"
+  ],
+  "success_threshold": 1.0,
+  "max_prompts": 300,
+  "max_responses_per_prompt": 8,
+  "min_responses_per_prompt": 2,
+  "seed": 42,
+  "aggregate": {
+    "prompt_count": 300,
+    "response_count": 2400,
+    "bucket_prompt_counts": {
+      "easy": 100,
+      "hard": 100,
+      "medium": 100
+    },
+    "mean_responses_per_prompt": 8.0,
+    "mean_successes_per_prompt": 2.816666666666667,
+    "summary_tag_rate": 0.9266666666666666,
+    "feedback_rate": 0.0,
+    "candidate_count": 2400,
+    "evidence_count": 4800,
+    "evidence_type_counts": {
+      "response_full": 2400,
+      "summary": 2400
+    }
+  }
+}

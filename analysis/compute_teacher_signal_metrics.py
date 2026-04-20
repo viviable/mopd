@@ -142,6 +142,39 @@ def top1_hit_rate(scores: list[float], rewards: list[float], successes: list[int
     return 1.0 if rewards[best_idx] == max_reward or successes[best_idx] == 1 else 0.0
 
 
+def point_biserial(scores: list[float], labels: list[int]) -> float:
+    if len(scores) != len(labels) or len(scores) < 2:
+        return 0.0
+    return pearson(scores, [float(label) for label in labels])
+
+
+def sigmoid(value: float) -> float:
+    if value >= 0:
+        z = math.exp(-value)
+        return 1.0 / (1.0 + z)
+    z = math.exp(value)
+    return z / (1.0 + z)
+
+
+def minmax_normalize(values: list[float]) -> list[float]:
+    if not values:
+        return []
+    min_value = min(values)
+    max_value = max(values)
+    if max_value == min_value:
+        return [0.5 for _ in values]
+    scale = max_value - min_value
+    return [(value - min_value) / scale for value in values]
+
+
+def brier_score(probabilities: list[float], labels: list[int]) -> float:
+    if len(probabilities) != len(labels) or not probabilities:
+        return 0.0
+    return average(
+        [(prob - float(label)) ** 2 for prob, label in zip(probabilities, labels)]
+    )
+
+
 def group_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, list[dict[str, Any]]]]:
     grouped: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
@@ -183,6 +216,9 @@ def compute_condition_metrics(rows_by_prompt: dict[str, list[dict[str, Any]]]) -
                 "kendall_tau": kendall_tau(scores, rewards),
                 "pairwise_accuracy": pairwise_accuracy(scores, rewards),
                 "success_auc": auc_from_scores(scores, successes),
+                "success_point_biserial": point_biserial(scores, successes),
+                "success_brier_sigmoid": brier_score([sigmoid(score) for score in scores], successes),
+                "success_brier_minmax": brier_score(minmax_normalize(scores), successes),
                 "top1_hit_rate": top1_hit_rate(scores, rewards, successes),
             }
         )
@@ -207,6 +243,9 @@ def compute_condition_metrics(rows_by_prompt: dict[str, list[dict[str, Any]]]) -
         "mean_kendall_tau": average([x["kendall_tau"] for x in per_prompt_metrics]),
         "pairwise_accuracy": average([x["pairwise_accuracy"] for x in per_prompt_metrics]),
         "success_auc": average([x["success_auc"] for x in per_prompt_metrics]),
+        "success_point_biserial": average([x["success_point_biserial"] for x in per_prompt_metrics]),
+        "success_brier_sigmoid": average([x["success_brier_sigmoid"] for x in per_prompt_metrics]),
+        "success_brier_minmax": average([x["success_brier_minmax"] for x in per_prompt_metrics]),
         "top1_hit_rate": average([x["top1_hit_rate"] for x in per_prompt_metrics]),
         "mean_prompt_length": average(prompt_lengths),
         "truncation_rate": average(trunc_flags),
@@ -217,6 +256,9 @@ def compute_condition_metrics(rows_by_prompt: dict[str, list[dict[str, Any]]]) -
                 "mean_kendall_tau": average([x["kendall_tau"] for x in items]),
                 "pairwise_accuracy": average([x["pairwise_accuracy"] for x in items]),
                 "success_auc": average([x["success_auc"] for x in items]),
+                "success_point_biserial": average([x["success_point_biserial"] for x in items]),
+                "success_brier_sigmoid": average([x["success_brier_sigmoid"] for x in items]),
+                "success_brier_minmax": average([x["success_brier_minmax"] for x in items]),
                 "top1_hit_rate": average([x["top1_hit_rate"] for x in items]),
             }
             for bucket, items in sorted(by_bucket.items())
@@ -302,13 +344,23 @@ def main() -> int:
     all_grouped = group_rows(rows)
     effective_rows = [row for row in rows if row["effective_for_condition"]]
     effective_grouped = group_rows(effective_rows)
+    reward_zero_rows = [row for row in rows if float(row["reward"]) == 0.0]
+    reward_zero_grouped = group_rows(reward_zero_rows)
+    reward_zero_effective_rows = [row for row in reward_zero_rows if row["effective_for_condition"]]
+    reward_zero_effective_grouped = group_rows(reward_zero_effective_rows)
 
     all_counts = defaultdict(int)
     effective_counts = defaultdict(int)
+    reward_zero_counts = defaultdict(int)
+    reward_zero_effective_counts = defaultdict(int)
     for row in rows:
         all_counts[row["condition"]] += 1
         if row["effective_for_condition"]:
             effective_counts[row["condition"]] += 1
+        if float(row["reward"]) == 0.0:
+            reward_zero_counts[row["condition"]] += 1
+            if row["effective_for_condition"]:
+                reward_zero_effective_counts[row["condition"]] += 1
 
     result = {
         "input": args.input,
@@ -323,13 +375,30 @@ def main() -> int:
                 "conditions": compute_split(effective_grouped),
                 "paired_by_target_type": build_paired_subset(effective_rows),
             },
+            "reward_zero_only": {
+                "description": "Only scored samples with reward == 0. These metrics are mainly diagnostic because rank-based metrics can degenerate when all retained labels are failures.",
+                "conditions": compute_split(reward_zero_grouped),
+                "paired_by_target_type": build_paired_subset(reward_zero_rows),
+            },
+            "reward_zero_effective_only": {
+                "description": "Only reward == 0 samples where the requested context sections were actually present. Mainly diagnostic for failure-only slices.",
+                "conditions": compute_split(reward_zero_effective_grouped),
+                "paired_by_target_type": build_paired_subset(reward_zero_effective_rows),
+            },
         },
         "condition_sample_counts": {
             condition: {
                 "all_samples": all_counts[condition],
                 "effective_only": effective_counts[condition],
+                "reward_zero_only": reward_zero_counts[condition],
+                "reward_zero_effective_only": reward_zero_effective_counts[condition],
             }
-            for condition in sorted(set(all_counts) | set(effective_counts))
+            for condition in sorted(
+                set(all_counts)
+                | set(effective_counts)
+                | set(reward_zero_counts)
+                | set(reward_zero_effective_counts)
+            )
         },
     }
     write_json(Path(args.output), result)

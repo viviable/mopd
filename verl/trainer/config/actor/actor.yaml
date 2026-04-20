@@ -124,6 +124,9 @@ self_distillation:
   # Requires include_environment_feedback=True to have any effect
   environment_feedback_only_without_solution: True
 
+  # Whether to include the primary successful solution from the same uid (if available)
+  include_primary_solution: True
+
   # IS clip for loss; null disables IS weighting
   is_clip: 2
 
@@ -173,6 +176,10 @@ self_distillation:
   # Whether to include a failed solution when no successful solution exists for the uid
   include_failure_solution: False
 
+  # When to include a failed solution if include_failure_solution=True
+  # Options: "when_no_solution", "always"
+  failure_solution_condition: when_no_solution
+
   # Whether to append a summary instruction to the generation prompt and inject k solution summaries into the reprompt
   # Mutually exclusive with include_another_solution / include_failure_solution
   summarize_solutions: False
@@ -180,6 +187,8 @@ self_distillation:
   summary_tag: summary
   summary_instruction: "\n\nAfter your answer, briefly summarize your key approach in one sentence inside <summary> tags, e.g. <summary>...</summary>."
   summary_item_template: "\nSummary of another successful solution:\n\n{summary_text}\n\n"
+  # Which summary pool to sample from: "success", "all", or "failure"
+  summary_source: success
   summary_from_all: False
   summary_item_template_failed: "\nSummary of another unsuccessful solution:\n\n{summary_text}\n\n"
 

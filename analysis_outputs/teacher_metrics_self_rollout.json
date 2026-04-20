@@ -1,0 +1,699 @@
+{
+  "input": "analysis_outputs/chemistry_teacher_scores_self.jsonl",
+  "sample_sets": {
+    "all_samples": {
+      "description": "All scored samples, including rows where the requested context did not activate.",
+      "conditions": {
+        "another_solution": {
+          "count_prompts": 40,
+          "mean_spearman": 0.049711790645670335,
+          "mean_kendall_tau": 0.06903679653679655,
+          "pairwise_accuracy": 0.30857142857142855,
+          "success_auc": 0.3096130952380952,
+          "top1_hit_rate": 0.75,
+          "mean_prompt_length": 1174.51875,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.07278616567101263,
+              "mean_kendall_tau": -0.10034013605442176,
+              "pairwise_accuracy": 0.27125850340136054,
+              "success_auc": 0.27125850340136054,
+              "top1_hit_rate": 0.7142857142857143
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.23134445732469158,
+              "mean_kendall_tau": 0.3204795204795205,
+              "pairwise_accuracy": 0.6573260073260074,
+              "success_auc": 0.6605311355311356,
+              "top1_hit_rate": 0.5384615384615384
+            }
+          }
+        },
+        "failure_solution": {
+          "count_prompts": 40,
+          "mean_spearman": 0.034473346387280966,
+          "mean_kendall_tau": 0.05954274891774891,
+          "pairwise_accuracy": 0.3038244047619047,
+          "success_auc": 0.3048660714285714,
+          "top1_hit_rate": 0.675,
+          "mean_prompt_length": 2006.646875,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.04188844152647621,
+              "mean_kendall_tau": -0.038350340136054414,
+              "pairwise_accuracy": 0.30225340136054424,
+              "success_auc": 0.30225340136054424,
+              "top1_hit_rate": 0.6428571428571429
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.15118246437399271,
+              "mean_kendall_tau": 0.2245088245088245,
+              "pairwise_accuracy": 0.6093406593406594,
+              "success_auc": 0.6125457875457876,
+              "top1_hit_rate": 0.38461538461538464
+            }
+          }
+        },
+        "solution": {
+          "count_prompts": 40,
+          "mean_spearman": 0.07207317906801938,
+          "mean_kendall_tau": 0.11103625541125542,
+          "pairwise_accuracy": 0.322157738095238,
+          "success_auc": 0.32868303571428564,
+          "top1_hit_rate": 0.775,
+          "mean_prompt_length": 1601.540625,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.05991765553910165,
+              "mean_kendall_tau": -0.07425015460729746,
+              "pairwise_accuracy": 0.271641156462585,
+              "success_auc": 0.2828018707482993,
+              "top1_hit_rate": 0.7857142857142857
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.2862903338667845,
+              "mean_kendall_tau": 0.4216117216117216,
+              "pairwise_accuracy": 0.6987179487179488,
+              "success_auc": 0.7067765567765569,
+              "top1_hit_rate": 0.5384615384615384
+            }
+          }
+        },
+        "solution+another_solution": {
+          "count_prompts": 40,
+          "mean_spearman": 0.06381217865616425,
+          "mean_kendall_tau": 0.09686958874458876,
+          "pairwise_accuracy": 0.3194196428571428,
+          "success_auc": 0.3230803571428571,
+          "top1_hit_rate": 0.725,
+          "mean_prompt_length": 2320.1875,
+          "truncation_rate": 0.090625,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.0979934828289459,
+              "mean_kendall_tau": -0.13207328385899814,
+              "pairwise_accuracy": 0.25072278911564627,
+              "success_auc": 0.25607993197278917,
+              "top1_hit_rate": 0.6428571428571429
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.3018766081424471,
+              "mean_kendall_tau": 0.4402930402930403,
+              "pairwise_accuracy": 0.7128205128205127,
+              "success_auc": 0.7183150183150183,
+              "top1_hit_rate": 0.5384615384615384
+            }
+          }
+        },
+        "solution+failure_solution": {
+          "count_prompts": 40,
+          "mean_spearman": 0.03214521117389455,
+          "mean_kendall_tau": 0.056845238095238115,
+          "pairwise_accuracy": 0.2997321428571429,
+          "success_auc": 0.3023511904761905,
+          "top1_hit_rate": 0.725,
+          "mean_prompt_length": 2956.059375,
+          "truncation_rate": 0.15,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.10036081343422167,
+              "mean_kendall_tau": -0.12840136054421766,
+              "pairwise_accuracy": 0.2504251700680272,
+              "success_auc": 0.25552721088435376,
+              "top1_hit_rate": 0.6428571428571429
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.20698921807960657,
+              "mean_kendall_tau": 0.3131868131868132,
+              "pairwise_accuracy": 0.6525641025641025,
+              "success_auc": 0.655128205128205,
+              "top1_hit_rate": 0.5384615384615384
+            }
+          }
+        }
+      },
+      "paired_by_target_type": {
+        "self_response": {
+          "paired_prompt_count": 40,
+          "conditions": {
+            "another_solution": {
+              "count_prompts": 40,
+              "mean_spearman": 0.04971179064567034,
+              "mean_kendall_tau": 0.06903679653679655,
+              "pairwise_accuracy": 0.3085714285714286,
+              "success_auc": 0.30961309523809527,
+              "top1_hit_rate": 0.75,
+              "mean_prompt_length": 1174.51875,
+              "truncation_rate": 0.0,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 14,
+                  "mean_spearman": -0.07278616567101263,
+                  "mean_kendall_tau": -0.10034013605442176,
+                  "pairwise_accuracy": 0.27125850340136054,
+                  "success_auc": 0.27125850340136054,
+                  "top1_hit_rate": 0.7142857142857143
+                },
+                "hard": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.0,
+                  "mean_kendall_tau": 0.0,
+                  "pairwise_accuracy": 0.0,
+                  "success_auc": 0.0,
+                  "top1_hit_rate": 1.0
+                },
+                "medium": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.23134445732469158,
+                  "mean_kendall_tau": 0.3204795204795205,
+                  "pairwise_accuracy": 0.6573260073260074,
+                  "success_auc": 0.6605311355311355,
+                  "top1_hit_rate": 0.5384615384615384
+                }
+              }
+            },
+            "failure_solution": {
+              "count_prompts": 40,
+              "mean_spearman": 0.034473346387280966,
+              "mean_kendall_tau": 0.05954274891774893,
+              "pairwise_accuracy": 0.30382440476190475,
+              "success_auc": 0.3048660714285715,
+              "top1_hit_rate": 0.675,
+              "mean_prompt_length": 2006.646875,
+              "truncation_rate": 0.0,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 14,
+                  "mean_spearman": -0.04188844152647621,
+                  "mean_kendall_tau": -0.03835034013605442,
+                  "pairwise_accuracy": 0.3022534013605442,
+                  "success_auc": 0.3022534013605442,
+                  "top1_hit_rate": 0.6428571428571429
+                },
+                "hard": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.0,
+                  "mean_kendall_tau": 0.0,
+                  "pairwise_accuracy": 0.0,
+                  "success_auc": 0.0,
+                  "top1_hit_rate": 1.0
+                },
+                "medium": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.15118246437399271,
+                  "mean_kendall_tau": 0.22450882450882453,
+                  "pairwise_accuracy": 0.6093406593406594,
+                  "success_auc": 0.6125457875457875,
+                  "top1_hit_rate": 0.38461538461538464
+                }
+              }
+            },
+            "solution": {
+              "count_prompts": 40,
+              "mean_spearman": 0.07207317906801938,
+              "mean_kendall_tau": 0.11103625541125542,
+              "pairwise_accuracy": 0.3221577380952382,
+              "success_auc": 0.3286830357142858,
+              "top1_hit_rate": 0.775,
+              "mean_prompt_length": 1601.540625,
+              "truncation_rate": 0.0,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 14,
+                  "mean_spearman": -0.05991765553910165,
+                  "mean_kendall_tau": -0.07425015460729746,
+                  "pairwise_accuracy": 0.271641156462585,
+                  "success_auc": 0.2828018707482993,
+                  "top1_hit_rate": 0.7857142857142857
+                },
+                "hard": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.0,
+                  "mean_kendall_tau": 0.0,
+                  "pairwise_accuracy": 0.0,
+                  "success_auc": 0.0,
+                  "top1_hit_rate": 1.0
+                },
+                "medium": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.2862903338667845,
+                  "mean_kendall_tau": 0.42161172161172156,
+                  "pairwise_accuracy": 0.6987179487179488,
+                  "success_auc": 0.7067765567765568,
+                  "top1_hit_rate": 0.5384615384615384
+                }
+              }
+            },
+            "solution+another_solution": {
+              "count_prompts": 40,
+              "mean_spearman": 0.06381217865616425,
+              "mean_kendall_tau": 0.09686958874458876,
+              "pairwise_accuracy": 0.3194196428571429,
+              "success_auc": 0.3230803571428572,
+              "top1_hit_rate": 0.725,
+              "mean_prompt_length": 2320.1875,
+              "truncation_rate": 0.090625,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 14,
+                  "mean_spearman": -0.0979934828289459,
+                  "mean_kendall_tau": -0.13207328385899814,
+                  "pairwise_accuracy": 0.2507227891156462,
+                  "success_auc": 0.2560799319727891,
+                  "top1_hit_rate": 0.6428571428571429
+                },
+                "hard": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.0,
+                  "mean_kendall_tau": 0.0,
+                  "pairwise_accuracy": 0.0,
+                  "success_auc": 0.0,
+                  "top1_hit_rate": 1.0
+                },
+                "medium": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.30187660814244716,
+                  "mean_kendall_tau": 0.4402930402930402,
+                  "pairwise_accuracy": 0.7128205128205128,
+                  "success_auc": 0.7183150183150183,
+                  "top1_hit_rate": 0.5384615384615384
+                }
+              }
+            },
+            "solution+failure_solution": {
+              "count_prompts": 40,
+              "mean_spearman": 0.03214521117389455,
+              "mean_kendall_tau": 0.056845238095238095,
+              "pairwise_accuracy": 0.2997321428571428,
+              "success_auc": 0.30235119047619047,
+              "top1_hit_rate": 0.725,
+              "mean_prompt_length": 2956.059375,
+              "truncation_rate": 0.15,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 14,
+                  "mean_spearman": -0.10036081343422168,
+                  "mean_kendall_tau": -0.1284013605442177,
+                  "pairwise_accuracy": 0.2504251700680272,
+                  "success_auc": 0.2555272108843537,
+                  "top1_hit_rate": 0.6428571428571429
+                },
+                "hard": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.0,
+                  "mean_kendall_tau": 0.0,
+                  "pairwise_accuracy": 0.0,
+                  "success_auc": 0.0,
+                  "top1_hit_rate": 1.0
+                },
+                "medium": {
+                  "count_prompts": 13,
+                  "mean_spearman": 0.20698921807960657,
+                  "mean_kendall_tau": 0.3131868131868132,
+                  "pairwise_accuracy": 0.6525641025641027,
+                  "success_auc": 0.655128205128205,
+                  "top1_hit_rate": 0.5384615384615384
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "effective_only": {
+      "description": "Only scored samples where the requested context sections were actually present.",
+      "conditions": {
+        "another_solution": {
+          "count_prompts": 20,
+          "mean_spearman": 0.03638229035223787,
+          "mean_kendall_tau": 0.0330952380952381,
+          "pairwise_accuracy": 0.3165476190476191,
+          "success_auc": 0.3165476190476191,
+          "top1_hit_rate": 0.8,
+          "mean_prompt_length": 2097.948051948052,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.07278616567101263,
+              "mean_kendall_tau": -0.10034013605442176,
+              "pairwise_accuracy": 0.27125850340136054,
+              "success_auc": 0.27125850340136054,
+              "top1_hit_rate": 0.7142857142857143
+            },
+            "medium": {
+              "count_prompts": 6,
+              "mean_spearman": 0.29110868773982235,
+              "mean_kendall_tau": 0.3444444444444444,
+              "pairwise_accuracy": 0.4222222222222222,
+              "success_auc": 0.4222222222222222,
+              "top1_hit_rate": 1.0
+            }
+          }
+        },
+        "failure_solution": {
+          "count_prompts": 35,
+          "mean_spearman": 0.029971983312980274,
+          "mean_kendall_tau": 0.05172232529375386,
+          "pairwise_accuracy": 0.31049319727891156,
+          "success_auc": 0.31168367346938775,
+          "top1_hit_rate": 0.6285714285714286,
+          "mean_prompt_length": 2263.0035971223024,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 9,
+              "mean_spearman": -0.10181695787862179,
+              "mean_kendall_tau": -0.12314814814814816,
+              "pairwise_accuracy": 0.32731481481481484,
+              "success_auc": 0.32731481481481484,
+              "top1_hit_rate": 0.4444444444444444
+            },
+            "hard": {
+              "count_prompts": 13,
+              "mean_spearman": 0.0,
+              "mean_kendall_tau": 0.0,
+              "pairwise_accuracy": 0.0,
+              "success_auc": 0.0,
+              "top1_hit_rate": 1.0
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.15118246437399271,
+              "mean_kendall_tau": 0.2245088245088245,
+              "pairwise_accuracy": 0.6093406593406594,
+              "success_auc": 0.6125457875457876,
+              "top1_hit_rate": 0.38461538461538464
+            }
+          }
+        },
+        "solution": {
+          "count_prompts": 27,
+          "mean_spearman": 0.03962465893229939,
+          "mean_kendall_tau": 0.04633237133237133,
+          "pairwise_accuracy": 0.29208553791887126,
+          "success_auc": 0.29910714285714285,
+          "top1_hit_rate": 0.8518518518518519,
+          "mean_prompt_length": 2278.7607655502393,
+          "truncation_rate": 0.0,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.05991765553910165,
+              "mean_kendall_tau": -0.07425015460729746,
+              "pairwise_accuracy": 0.271641156462585,
+              "success_auc": 0.2828018707482993,
+              "top1_hit_rate": 0.7857142857142857
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.14682407451688514,
+              "mean_kendall_tau": 0.17619047619047618,
+              "pairwise_accuracy": 0.31410256410256415,
+              "success_auc": 0.3166666666666667,
+              "top1_hit_rate": 0.9230769230769231
+            }
+          }
+        },
+        "solution+another_solution": {
+          "count_prompts": 20,
+          "mean_spearman": 0.0245238114549503,
+          "mean_kendall_tau": 0.017548701298701314,
+          "pairwise_accuracy": 0.30550595238095235,
+          "success_auc": 0.3092559523809524,
+          "top1_hit_rate": 0.75,
+          "mean_prompt_length": 3682.974025974026,
+          "truncation_rate": 0.18831168831168832,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 14,
+              "mean_spearman": -0.0979934828289459,
+              "mean_kendall_tau": -0.13207328385899814,
+              "pairwise_accuracy": 0.25072278911564627,
+              "success_auc": 0.25607993197278917,
+              "top1_hit_rate": 0.6428571428571429
+            },
+            "medium": {
+              "count_prompts": 6,
+              "mean_spearman": 0.31039749811737477,
+              "mean_kendall_tau": 0.3666666666666667,
+              "pairwise_accuracy": 0.43333333333333335,
+              "success_auc": 0.43333333333333335,
+              "top1_hit_rate": 1.0
+            }
+          }
+        },
+        "solution+failure_solution": {
+          "count_prompts": 22,
+          "mean_spearman": -0.009464481322069463,
+          "mean_kendall_tau": -0.015692640692640692,
+          "pairwise_accuracy": 0.2852272727272727,
+          "success_auc": 0.2867424242424242,
+          "top1_hit_rate": 0.6818181818181818,
+          "mean_prompt_length": 3776.9760479041915,
+          "truncation_rate": 0.2874251497005988,
+          "by_bucket": {
+            "easy": {
+              "count_prompts": 9,
+              "mean_spearman": -0.12873403348743853,
+              "mean_kendall_tau": -0.15740740740740738,
+              "pairwise_accuracy": 0.3101851851851852,
+              "success_auc": 0.3101851851851852,
+              "top1_hit_rate": 0.4444444444444444
+            },
+            "medium": {
+              "count_prompts": 13,
+              "mean_spearman": 0.07310674710010913,
+              "mean_kendall_tau": 0.08241758241758242,
+              "pairwise_accuracy": 0.26794871794871794,
+              "success_auc": 0.27051282051282055,
+              "top1_hit_rate": 0.8461538461538461
+            }
+          }
+        }
+      },
+      "paired_by_target_type": {
+        "self_response": {
+          "paired_prompt_count": 15,
+          "conditions": {
+            "another_solution": {
+              "count_prompts": 15,
+              "mean_spearman": 0.04850972046965048,
+              "mean_kendall_tau": 0.04412698412698412,
+              "pairwise_accuracy": 0.42206349206349203,
+              "success_auc": 0.42206349206349203,
+              "top1_hit_rate": 0.7333333333333333,
+              "mean_prompt_length": 2170.5087719298244,
+              "truncation_rate": 0.0,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 9,
+                  "mean_spearman": -0.11322292437713077,
+                  "mean_kendall_tau": -0.15608465608465608,
+                  "pairwise_accuracy": 0.4219576719576719,
+                  "success_auc": 0.4219576719576719,
+                  "top1_hit_rate": 0.5555555555555556
+                },
+                "medium": {
+                  "count_prompts": 6,
+                  "mean_spearman": 0.2911086877398224,
+                  "mean_kendall_tau": 0.3444444444444445,
+                  "pairwise_accuracy": 0.4222222222222222,
+                  "success_auc": 0.4222222222222222,
+                  "top1_hit_rate": 1.0
+                }
+              }
+            },
+            "failure_solution": {
+              "count_prompts": 15,
+              "mean_spearman": -0.01254398215394494,
+              "mean_kendall_tau": -0.022171717171717172,
+              "pairwise_accuracy": 0.4197222222222222,
+              "success_auc": 0.4225,
+              "top1_hit_rate": 0.4666666666666667,
+              "mean_prompt_length": 2356.8474576271187,
+              "truncation_rate": 0.0,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 9,
+                  "mean_spearman": -0.10181695787862179,
+                  "mean_kendall_tau": -0.12314814814814816,
+                  "pairwise_accuracy": 0.32731481481481484,
+                  "success_auc": 0.32731481481481484,
+                  "top1_hit_rate": 0.4444444444444444
+                },
+                "medium": {
+                  "count_prompts": 6,
+                  "mean_spearman": 0.12136548143307031,
+                  "mean_kendall_tau": 0.12929292929292927,
+                  "pairwise_accuracy": 0.5583333333333332,
+                  "success_auc": 0.5652777777777778,
+                  "top1_hit_rate": 0.5
+                }
+              }
+            },
+            "solution": {
+              "count_prompts": 15,
+              "mean_spearman": 0.0713243860781389,
+              "mean_kendall_tau": 0.08339826839826839,
+              "pairwise_accuracy": 0.5257539682539681,
+              "success_auc": 0.5383928571428572,
+              "top1_hit_rate": 0.7333333333333333,
+              "mean_prompt_length": 2326.0333333333333,
+              "truncation_rate": 0.0,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 9,
+                  "mean_spearman": -0.09320524194971368,
+                  "mean_kendall_tau": -0.11550024050024049,
+                  "pairwise_accuracy": 0.42255291005291007,
+                  "success_auc": 0.4399140211640212,
+                  "top1_hit_rate": 0.6666666666666666
+                },
+                "medium": {
+                  "count_prompts": 6,
+                  "mean_spearman": 0.3181188281199177,
+                  "mean_kendall_tau": 0.3817460317460317,
+                  "pairwise_accuracy": 0.6805555555555557,
+                  "success_auc": 0.6861111111111112,
+                  "top1_hit_rate": 0.8333333333333334
+                }
+              }
+            },
+            "solution+another_solution": {
+              "count_prompts": 15,
+              "mean_spearman": 0.03269841527326708,
+              "mean_kendall_tau": 0.023398268398268418,
+              "pairwise_accuracy": 0.40734126984126984,
+              "success_auc": 0.4123412698412698,
+              "top1_hit_rate": 0.6666666666666666,
+              "mean_prompt_length": 3801.535087719298,
+              "truncation_rate": 0.24561403508771928,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 9,
+                  "mean_spearman": -0.15243430662280474,
+                  "mean_kendall_tau": -0.20544733044733043,
+                  "pairwise_accuracy": 0.3900132275132275,
+                  "success_auc": 0.39834656084656084,
+                  "top1_hit_rate": 0.4444444444444444
+                },
+                "medium": {
+                  "count_prompts": 6,
+                  "mean_spearman": 0.31039749811737477,
+                  "mean_kendall_tau": 0.3666666666666667,
+                  "pairwise_accuracy": 0.43333333333333335,
+                  "success_auc": 0.43333333333333335,
+                  "top1_hit_rate": 1.0
+                }
+              }
+            },
+            "solution+failure_solution": {
+              "count_prompts": 15,
+              "mean_spearman": -0.013881239272368546,
+              "mean_kendall_tau": -0.02301587301587302,
+              "pairwise_accuracy": 0.41833333333333333,
+              "success_auc": 0.42055555555555557,
+              "top1_hit_rate": 0.5333333333333333,
+              "mean_prompt_length": 3853.3728813559323,
+              "truncation_rate": 0.288135593220339,
+              "by_bucket": {
+                "easy": {
+                  "count_prompts": 9,
+                  "mean_spearman": -0.12873403348743853,
+                  "mean_kendall_tau": -0.1574074074074074,
+                  "pairwise_accuracy": 0.3101851851851852,
+                  "success_auc": 0.3101851851851852,
+                  "top1_hit_rate": 0.4444444444444444
+                },
+                "medium": {
+                  "count_prompts": 6,
+                  "mean_spearman": 0.15839795205023643,
+                  "mean_kendall_tau": 0.17857142857142858,
+                  "pairwise_accuracy": 0.5805555555555556,
+                  "success_auc": 0.5861111111111111,
+                  "top1_hit_rate": 0.6666666666666666
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "condition_sample_counts": {
+    "another_solution": {
+      "all_samples": 320,
+      "effective_only": 154
+    },
+    "failure_solution": {
+      "all_samples": 320,
+      "effective_only": 278
+    },
+    "solution": {
+      "all_samples": 320,
+      "effective_only": 209
+    },
+    "solution+another_solution": {
+      "all_samples": 320,
+      "effective_only": 154
+    },
+    "solution+failure_solution": {
+      "all_samples": 320,
+      "effective_only": 167
+    }
+  }
+}

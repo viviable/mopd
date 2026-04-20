@@ -11,11 +11,11 @@ CONFIG_NAME="sdpo"
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
 # DATA_PATH="datasets/sciknoweval/biology"
-DATA_PATH="datasets/sciknoweval/chemistry"
+# DATA_PATH="datasets/sciknoweval/chemistry"
 # DATA_PATH="datasets/sciknoweval/physics"
 # DATA_PATH="datasets/sciknoweval/material"
 
-# DATA_PATH="datasets/lcb_v6"
+DATA_PATH="datasets/lcb_v6"
 # DATA_PATH="datasets/G-OPD-Training-Data/Eurus"
 # DATA_PATH="datasets/gsm8k"
 # DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2025"
@@ -37,6 +37,9 @@ LAMBDA=0.0
 CLIP_ADV_HIGH=null
 DONTS_REPROMPT_ON_SELF_SUCCESS=True
 ALPHA=0.5
+INCLUDE_PRIMARY_SOLUTION=${INCLUDE_PRIMARY_SOLUTION:-True}
+FAILURE_SOLUTION_CONDITION=${FAILURE_SOLUTION_CONDITION:-when_no_solution}
+SUMMARY_SOURCE=${SUMMARY_SOURCE:-success}
 # MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
 MODEL_PATH="Qwen/Qwen3-4B-Instruct-2507"
 # MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-4B}"
@@ -46,10 +49,10 @@ ROLLOUT_BACKEND="${ROLLOUT_BACKEND:-vllm}"
 ROLLOUT_MAX_MODEL_LEN=4096
 
 
-INCLUDE_ANOTHER_SOLUTION=False
-INCLUDE_FAILURE_SOLUTION=False
-SUMMARIZE_SOLUTIONS=True
-SUMMARY_FROM_ALL=True
+INCLUDE_ANOTHER_SOLUTION=True
+INCLUDE_FAILURE_SOLUTION=True
+SUMMARIZE_SOLUTIONS=False
+SUMMARY_FROM_ALL=False
 SUMMARY_K=8
 
 MAX_ACTOR_CKPT_TO_KEEP=2
@@ -132,7 +135,7 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-EXP_NAME="summary_from_all-Success${INCLUDE_ANOTHER_SOLUTION}Fail${INCLUDE_FAILURE_SOLUTION}-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
+EXP_NAME="Success${INCLUDE_ANOTHER_SOLUTION}Fail${INCLUDE_FAILURE_SOLUTION}-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
 CKPT_DIR="/project/flame/wyu3/mopd/${EXP_NAME}"
 ROLLOUT_DATA_DIR="${ROLLOUT_DATA_DIR:-/project/flame/wyu3/mopd/rollout/${EXP_NAME}}"
 
@@ -168,9 +171,12 @@ ARGS=(
   "algorithm.rollout_correction.rollout_is=token"
   "actor_rollout_ref.actor.self_distillation.dont_reprompt_on_self_success=${DONTS_REPROMPT_ON_SELF_SUCCESS}"
   "actor_rollout_ref.actor.self_distillation.alpha=$ALPHA"
+  "actor_rollout_ref.actor.self_distillation.include_primary_solution=${INCLUDE_PRIMARY_SOLUTION}"
   "actor_rollout_ref.actor.self_distillation.include_another_solution=$INCLUDE_ANOTHER_SOLUTION"
   "actor_rollout_ref.actor.self_distillation.include_failure_solution=$INCLUDE_FAILURE_SOLUTION"
+  "actor_rollout_ref.actor.self_distillation.failure_solution_condition=${FAILURE_SOLUTION_CONDITION}"
   "actor_rollout_ref.actor.self_distillation.summarize_solutions=$SUMMARIZE_SOLUTIONS"
+  "actor_rollout_ref.actor.self_distillation.summary_source=${SUMMARY_SOURCE}"
   "actor_rollout_ref.actor.self_distillation.summary_from_all=$SUMMARY_FROM_ALL"
   "actor_rollout_ref.actor.self_distillation.summary_k=$SUMMARY_K"
   "actor_rollout_ref.actor.optim.lr_warmup_steps=10"

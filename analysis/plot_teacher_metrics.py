@@ -11,6 +11,9 @@ MAIN_METRICS = [
     "mean_kendall_tau",
     "pairwise_accuracy",
     "success_auc",
+    "success_point_biserial",
+    "success_brier_sigmoid",
+    "success_brier_minmax",
     "top1_hit_rate",
 ]
 
@@ -36,7 +39,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--sample-set",
-        choices=["all_samples", "effective_only"],
+        choices=[
+            "all_samples",
+            "effective_only",
+            "reward_zero_only",
+            "reward_zero_effective_only",
+        ],
         default="all_samples",
         help="Which sample set from teacher_metrics.json to plot.",
     )
@@ -72,7 +80,7 @@ def ordered_conditions(metrics_view: dict) -> list[str]:
 
 def plot_main(metrics_view: dict, output_path: Path, title: str) -> None:
     conditions = ordered_conditions(metrics_view)
-    fig, axes = plt.subplots(1, len(MAIN_METRICS), figsize=(22, 4.8), constrained_layout=True)
+    fig, axes = plt.subplots(1, len(MAIN_METRICS), figsize=(34, 4.8), constrained_layout=True)
 
     for ax, metric in zip(axes, MAIN_METRICS):
         values = [metrics_view["conditions"][cond][metric] for cond in conditions]
@@ -82,6 +90,8 @@ def plot_main(metrics_view: dict, output_path: Path, title: str) -> None:
         ax.set_xticklabels(conditions, rotation=45, ha="right")
         ax.axhline(0.0, color="black", linewidth=0.8, alpha=0.5)
         ax.grid(axis="y", linestyle="--", alpha=0.25)
+        if "brier" in metric:
+            ax.invert_yaxis()
 
     fig.suptitle(title, fontsize=14)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,7 +101,7 @@ def plot_main(metrics_view: dict, output_path: Path, title: str) -> None:
 
 def plot_buckets(metrics_view: dict, output_path: Path, title: str) -> None:
     conditions = ordered_conditions(metrics_view)
-    fig, axes = plt.subplots(len(BUCKET_ORDER), len(MAIN_METRICS), figsize=(22, 12), constrained_layout=True)
+    fig, axes = plt.subplots(len(BUCKET_ORDER), len(MAIN_METRICS), figsize=(34, 12), constrained_layout=True)
 
     for row_idx, bucket in enumerate(BUCKET_ORDER):
         for col_idx, metric in enumerate(MAIN_METRICS):
@@ -109,6 +119,8 @@ def plot_buckets(metrics_view: dict, output_path: Path, title: str) -> None:
             ax.set_xticklabels(conditions, rotation=45, ha="right")
             ax.axhline(0.0, color="black", linewidth=0.8, alpha=0.5)
             ax.grid(axis="y", linestyle="--", alpha=0.25)
+            if "brier" in metric:
+                ax.invert_yaxis()
 
     fig.suptitle(title, fontsize=14)
     output_path.parent.mkdir(parents=True, exist_ok=True)

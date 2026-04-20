@@ -102,8 +102,10 @@ class SelfDistillationConfig(BaseConfig):
     )
     include_environment_feedback: bool = False
     environment_feedback_only_without_solution: bool = False
+    include_primary_solution: bool = True
     include_another_solution: bool = False
     include_failure_solution: bool = False
+    failure_solution_condition: str = "when_no_solution"
     summarize_solutions: bool = False
     summary_k: int = 1
     summary_tag: str = "summary"
@@ -114,6 +116,7 @@ class SelfDistillationConfig(BaseConfig):
     summary_item_template: str = (
         "\nSummary of another successful solution:\n\n{summary_text}\n\n"
     )
+    summary_source: str = "success"
     summary_from_all: bool = False
     summary_item_template_failed: str = (
         "\nSummary of another unsuccessful solution:\n\n{summary_text}\n\n"
@@ -142,6 +145,18 @@ class SelfDistillationConfig(BaseConfig):
             raise ValueError(f"self_distillation.is_clip must be positive, got {self.is_clip}")
         if self.step_level_kl and not self.step_separator:
             raise ValueError("self_distillation.step_separator must be non-empty when step_level_kl=True")
+        valid_failure_solution_conditions = ["when_no_solution", "always"]
+        if self.failure_solution_condition not in valid_failure_solution_conditions:
+            raise ValueError(
+                "self_distillation.failure_solution_condition must be one of "
+                f"{valid_failure_solution_conditions}, got {self.failure_solution_condition}"
+            )
+        valid_summary_sources = ["success", "all", "failure"]
+        if self.summary_source not in valid_summary_sources:
+            raise ValueError(
+                "self_distillation.summary_source must be one of "
+                f"{valid_summary_sources}, got {self.summary_source}"
+            )
 
 
 @dataclass

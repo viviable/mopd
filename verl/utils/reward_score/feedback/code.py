@@ -569,8 +569,26 @@ def run_tests_for_one_example(test_cases, completion, send_conn, sparse_rewards,
 
         try:
             send_conn.send(record)
-        except Exception:
-            print(f"[{test_idx}] SEND ERROR: {type(e).__name__}: {e}\n")
+        except BaseException as send_err:
+            fallback_record = {
+                "test_idx": test_idx,
+                "input": _safe_preview(test_input),
+                "expected": _safe_preview(test_output),
+                "actual": _safe_preview(
+                    f"{ERROR_PREFIX}failed to send full test record: {type(send_err).__name__}: {send_err}; "
+                    f"actual={output_value}; debug={test_debug}"
+                ),
+                "passed": bool(passed),
+                "debug": "",
+                "time": time_elapsed,
+            }
+            try:
+                send_conn.send(fallback_record)
+            except BaseException as fallback_send_err:
+                print(
+                    f"[{test_idx}] SEND ERROR: {type(send_err).__name__}: {send_err}; "
+                    f"FALLBACK SEND ERROR: {type(fallback_send_err).__name__}: {fallback_send_err}\n"
+                )
 
         # End INNER block
 
@@ -587,11 +605,42 @@ def run_tests_for_one_example(test_cases, completion, send_conn, sparse_rewards,
             "debug": "",
             "time": float("inf"),
         }
-        send_conn.send(record)
+        try:
+            send_conn.send(record)
+        except BaseException as send_err:
+            fallback_record = {
+                "test_idx": test_idx,
+                "input": _safe_preview(test_input),
+                "expected": _safe_preview(test_output),
+                "actual": _safe_preview(
+                    f"{OUTER_ERROR_PREFIX}{_short_trace(outer_e)}; "
+                    f"failed to send full outer record: {type(send_err).__name__}: {send_err}"
+                ),
+                "passed": False,
+                "debug": "",
+                "time": float('inf'),
+            }
+            try:
+                send_conn.send(fallback_record)
+            except BaseException as fallback_send_err:
+                print(
+                    f"[{test_idx}] OUTER SEND ERROR: {type(send_err).__name__}: {send_err}; "
+                    f"FALLBACK SEND ERROR: {type(fallback_send_err).__name__}: {fallback_send_err}\n"
+                )
 
     finally:
         sys.stderr = old_stderr
         send_conn.close()
+
+
+def _safe_preview(value, max_chars=2000):
+    try:
+        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    except Exception:
+        text = repr(value)
+    if len(text) > max_chars:
+        return text[:max_chars] + "...[truncated]"
+    return text
 
 
 def extract_code(response):

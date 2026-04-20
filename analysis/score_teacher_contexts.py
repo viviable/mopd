@@ -39,6 +39,14 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         help="Optional list of target types to score. If omitted, score all target types.",
     )
+    parser.add_argument(
+        "--self-target-only",
+        action="store_true",
+        help=(
+            "Score each context variant only against its own rollout response. "
+            "In this mode, --targets should point to candidate_responses.jsonl, and rows are joined by response_id."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -80,11 +88,14 @@ def load_model_and_tokenizer(model_name: str, device: str, dtype_name: str):
 
 
 def build_target_index(targets: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    index: dict[str, list[dict[str, Any]]] = {}
     by_prompt: dict[str, list[dict[str, Any]]] = {}
     for row in targets:
         by_prompt.setdefault(row["prompt_id"], []).append(row)
     return by_prompt
+
+
+def build_candidate_index_by_response_id(targets: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {row["response_id"]: row for row in targets}
 
 
 def count_total_examples(
@@ -95,6 +106,20 @@ def count_total_examples(
     total = 0
     for variant in variants:
         total += len(targets_by_prompt.get(variant["prompt_id"], []))
+        if max_examples is not None and total >= max_examples:
+            return max_examples
+    return total
+
+
+def count_total_self_examples(
+    variants: list[dict[str, Any]],
+    targets_by_response_id: dict[str, dict[str, Any]],
+    max_examples: int | None,
+) -> int:
+    total = 0
+    for variant in variants:
+        if variant["response_id"] in targets_by_response_id:
+            total += 1
         if max_examples is not None and total >= max_examples:
             return max_examples
     return total
@@ -176,18 +201,31 @@ def main() -> int:
         variants = [row for row in variants if row["condition"] in allowed_conditions]
     if args.target_type_filter:
         allowed_target_types = set(args.target_type_filter)
-        targets = [row for row in targets if row["target_type"] in allowed_target_types]
+        targets = [row for row in targets if row.get("target_type", "self_response") in allowed_target_types]
 
-    targets_by_prompt = build_target_index(targets)
+    targets_by_prompt = None
+    targets_by_response_id = None
+    if args.self_target_only:
+        targets_by_response_id = build_candidate_index_by_response_id(targets)
+    else:
+        targets_by_prompt = build_target_index(targets)
     tokenizer, model = load_model_and_tokenizer(args.model, device=args.device, dtype_name=args.dtype)
-    total_examples = count_total_examples(variants, targets_by_prompt, args.max_examples)
+    total_examples = (
+        count_total_self_examples(variants, targets_by_response_id, args.max_examples)
+        if args.self_target_only
+        else count_total_examples(variants, targets_by_prompt, args.max_examples)
+    )
     progress = tqdm(total=total_examples, desc="Scoring teacher contexts", unit="example") if tqdm is not None else None
 
     rows_out: list[dict[str, Any]] = []
     processed = 0
     try:
         for variant in variants:
-            prompt_targets = targets_by_prompt.get(variant["prompt_id"], [])
+            if args.self_target_only:
+                target = targets_by_response_id.get(variant["response_id"])
+                prompt_targets = [target] if target is not None else []
+            else:
+                prompt_targets = targets_by_prompt.get(variant["prompt_id"], [])
             for target in prompt_targets:
                 score_dict = score_one(
                     tokenizer=tokenizer,
@@ -200,12 +238,12 @@ def main() -> int:
                 rows_out.append(
                     {
                         "variant_id": variant["variant_id"],
-                        "target_id": target["target_id"],
+                        "target_id": target.get("target_id", target.get("response_id")),
                         "condition": variant["condition"],
-                        "target_type": target["target_type"],
+                        "target_type": target.get("target_type", "self_response"),
                         "prompt_id": variant["prompt_id"],
-                        "response_id": target.get("source_response_id"),
-                        "source_model": target["source_model"],
+                        "response_id": target.get("source_response_id", target.get("response_id")),
+                        "source_model": target.get("source_model", "student_rollout"),
                         "teacher_model": args.model,
                         "sections_used": variant.get("sections_used", {}),
                         "variant_spec": variant.get("variant_spec", {}),

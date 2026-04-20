@@ -834,6 +834,9 @@ class RayPPOTrainer:
         uids_list = batch.non_tensor_batch["uid"]
         dont_reprompt_on_self_success = self_distillation_cfg.dont_reprompt_on_self_success
         remove_thinking = self_distillation_cfg.get("remove_thinking_from_demonstration", False)
+        include_primary_solution = self_distillation_cfg.get("include_primary_solution", True)
+        failure_solution_condition = self_distillation_cfg.get("failure_solution_condition", "when_no_solution")
+        summary_source = self_distillation_cfg.get("summary_source", "success")
 
         # Build a complete uid -> [all indices] map (used when summary_from_all=True)
         from collections import defaultdict as _defaultdict
@@ -841,6 +844,8 @@ class RayPPOTrainer:
         for _idx, _uid in enumerate(uids_list):
             all_by_uid[_uid].append(_idx)
         success_set: set = {j for idxs in success_by_uid.values() for j in idxs}
+        fail_by_uid = self._collect_failures_by_uid(batch, reward_tensor, self_distillation_cfg.success_reward_threshold)
+        failure_set: set = {j for idxs in fail_by_uid.values() for j in idxs}
 
         # Primary solution: first successful response for each sample's uid
         primary_solution_idxs = [
@@ -849,7 +854,7 @@ class RayPPOTrainer:
         ]
         solution_strs = [
             (self._remove_thinking_trace(response_texts[primary_solution_idxs[i]]) if remove_thinking else response_texts[primary_solution_idxs[i]])
-            if primary_solution_idxs[i] is not None else None
+            if include_primary_solution and primary_solution_idxs[i] is not None else None
             for i in range(batch_size)
         ]
 
@@ -869,10 +874,9 @@ class RayPPOTrainer:
         include_failure_solution = self_distillation_cfg.get("include_failure_solution", False)
         failure_solution_strs: list[Optional[str]] = [None] * batch_size
         if include_failure_solution:
-            fail_by_uid = self._collect_failures_by_uid(batch, reward_tensor, self_distillation_cfg.success_reward_threshold)
             failure_solution_strs = [
                 self._get_failure_solution(i, fail_by_uid, uids_list, response_texts)
-                if solution_strs[i] is None else None
+                if failure_solution_condition == "always" or primary_solution_idxs[i] is None else None
                 for i in range(batch_size)
             ]
 
@@ -898,12 +902,12 @@ class RayPPOTrainer:
             response_summaries = [self._extract_summary(t, tag) for t in response_texts]
             summary_tag_available_total = sum(1 for s in response_summaries if s is not None)
             for i in range(batch_size):
-                if solution_strs[i] is None:
-                    continue
                 summary_candidates += 1
                 uid = uids_list[i]
-                if summary_from_all:
+                if summary_source == "all" or summary_from_all:
                     pool = list(all_by_uid[uid])
+                elif summary_source == "failure":
+                    pool = list(fail_by_uid[uid])
                 else:
                     pool = list(success_by_uid[uid])
                 if dont_reprompt_on_self_success:
@@ -914,9 +918,9 @@ class RayPPOTrainer:
                 blocks = []
                 for j in sampled:
                     summary = response_summaries[j]
-                    if summary_from_all and j in success_set:
+                    if j in success_set:
                         sampled_summary_success += 1
-                    elif summary_from_all:
+                    elif j in failure_set:
                         sampled_summary_failure += 1
                     else:
                         sampled_summary_success += 1
@@ -929,7 +933,7 @@ class RayPPOTrainer:
                         sampled_summary_fallback += 1
                     else:
                         sampled_summary_with_tag += 1
-                    if summary_from_all and j not in success_set:
+                    if j in failure_set:
                         template = self_distillation_cfg.summary_item_template_failed
                     else:
                         template = self_distillation_cfg.summary_item_template

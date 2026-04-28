@@ -193,7 +193,10 @@ def _patch_vllm_input_validator_for_transformers_v5() -> None:
             lora_request = None
 
         model_config = self.model_config
-        tokenizer = self.tokenizer.get_lora_tokenizer(lora_request)
+        if hasattr(self.tokenizer, "get_lora_tokenizer"):
+            tokenizer = self.tokenizer.get_lora_tokenizer(lora_request)
+        else:
+            tokenizer = self.tokenizer
 
         prompt_ids = prompt_inputs["prompt_token_ids"]
         if not prompt_ids:

@@ -1,5 +1,5 @@
 from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential
-from azure.ai.ml import MLClient, command, Output
+from azure.ai.ml import MLClient, Input, command, Output
 from azure.ai.ml.entities import JupyterLabJobService, VsCodeJobService, TensorBoardJobService, SshJobService
 from datetime import datetime
 from argparse import ArgumentParser
@@ -8,7 +8,14 @@ import os
 # =========================== CONFIGURATION ===========================
 # SDPO config (aligned with run_local_sdpo.sh)
 CONFIG_NAME = "sdpo"
-DATA_PATH = "datasets/lcb_v6"
+DATA_ROOT_PATH = "UI/2026-04-28_173802_UTC/opd_hf"
+# Pick one dataset under the Azure folder, e.g. "tooluse", "lcb_v6",
+# or "sciknoweval/chemistry". Leave empty only if the parquet files live
+# directly under DATA_ROOT_PATH.
+DATA_SUBDIR = "tooluse"
+DATASTORE_NAME = "workspaceblobstore"
+TRAIN_FILE = "train.parquet"
+VAL_FILE = "test.parquet"
 
 TRAIN_BATCH_SIZE = 32
 ROLLOUT_BATCH_SIZE = 8
@@ -43,6 +50,15 @@ try:
 except Exception:
     print("No HF token found, continuing without it")
 
+# Optional W&B token
+wandb_token = os.environ.get("WANDB_API_KEY", "").strip()
+if not wandb_token:
+    try:
+        with open("./tokens/.wandb.txt", "r", encoding="utf-8") as f:
+            wandb_token = f.read().strip()
+    except Exception:
+        print("No W&B token found, continuing without it")
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -74,6 +90,9 @@ if __name__ == "__main__":
     )
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    resolved_data_path = DATA_ROOT_PATH.rstrip("/")
+    if DATA_SUBDIR:
+        resolved_data_path = f"{resolved_data_path}/{DATA_SUBDIR.strip('/')}"
     model_name = MODEL_PATH.replace("/", "-")
     exp_name = (
         f"SDPO-train{TRAIN_BATCH_SIZE}-alpha{ALPHA}-rollout{ROLLOUT_BATCH_SIZE}"
@@ -84,6 +103,8 @@ if __name__ == "__main__":
     hydra_args = [
         f"data.train_batch_size={TRAIN_BATCH_SIZE}",
         "data.max_prompt_length=2048",
+        f"data.train_files=[${{inputs.dataset}}/{TRAIN_FILE}]",
+        f"data.val_files=[${{inputs.dataset}}/{VAL_FILE}]",
         "trainer.group_name=SDPO-azure",
         "trainer.project_name=sdpo_base",
         "trainer.logger=[console,wandb]",
@@ -112,6 +133,12 @@ if __name__ == "__main__":
     ]
 
     hydra_args_str = " ".join([f'"{x}"' for x in hydra_args])
+    data_input_uri = (
+        f"azureml://subscriptions/{args.subscription_id}"
+        f"/resourcegroups/{args.resource_group}"
+        f"/workspaces/{args.workspace}"
+        f"/datastores/{DATASTORE_NAME}/paths/{resolved_data_path}/"
+    )
 
     command_str = f"""
 export PROJECT_ROOT=$(pwd)
@@ -121,7 +148,12 @@ export WANDB_ENTITY=safety
 export DISABLE_VERSION_CHECK=1
 export USE_AZURE_VERL_TRAINING=1
 
-bash "$PROJECT_ROOT/training/verl_training.sh" "{exp_name}" "{CONFIG_NAME}" "{DATA_PATH}" {hydra_args_str}
+echo "Mounted dataset directory: ${{inputs.dataset}}"
+echo "Resolved datastore path: {resolved_data_path}"
+ls -la "${{inputs.dataset}}" || true
+find "${{inputs.dataset}}" -maxdepth 2 -type f | sort || true
+
+bash "$PROJECT_ROOT/training/verl_training.sh" "{exp_name}" "{CONFIG_NAME}" "{resolved_data_path}" {hydra_args_str}
 """
 
     display_name = f"sdpo-{timestamp}"
@@ -129,6 +161,13 @@ bash "$PROJECT_ROOT/training/verl_training.sh" "{exp_name}" "{CONFIG_NAME}" "{DA
     training_job = command(
         code=".",
         command=command_str,
+        inputs={
+            "dataset": Input(
+                type="uri_folder",
+                path=data_input_uri,
+                mode="ro_mount",
+            ),
+        },
         outputs={
             "model_dir": Output(
                 type="uri_folder",
@@ -144,6 +183,7 @@ bash "$PROJECT_ROOT/training/verl_training.sh" "{exp_name}" "{CONFIG_NAME}" "{DA
         environment=ENVIRONMENT,
         environment_variables={
             "HF_TOKEN": hf_token,
+            "WANDB_API_KEY": wandb_token,
             "_AZUREML_SINGULARITY_JOB_UAI": (
                 "/subscriptions/d0c05057-7972-46ff-9bcf-3c932250155e/"
                 "resourceGroups/SingularityH100/providers/Microsoft.ManagedIdentity/"

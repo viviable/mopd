@@ -185,7 +185,13 @@ def _patch_vllm_input_validator_for_transformers_v5() -> None:
     if getattr(Processor, "_verl_validate_model_input_patch", False):
         return
 
-    def _validate_model_input(self, prompt_inputs, lora_request, prompt_type):
+    def _validate_model_input(self, prompt_inputs, lora_request=None, prompt_type="decoder"):
+        # vLLM changed this validator signature across versions. Accept both the
+        # older positional LoRA form and the newer prompt_type-only form.
+        if isinstance(lora_request, str) and prompt_type == "decoder":
+            prompt_type = lora_request
+            lora_request = None
+
         model_config = self.model_config
         tokenizer = self.tokenizer.get_lora_tokenizer(lora_request)
 

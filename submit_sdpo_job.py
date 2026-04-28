@@ -18,13 +18,19 @@ TRAIN_FILE = "train.parquet"
 VAL_FILE = "test.parquet"
 
 TRAIN_BATCH_SIZE = 32
-ROLLOUT_BATCH_SIZE = 8
+ROLLOUT_BATCH_SIZE = 4
 LR = 1e-5
 LAMBDA = 0.0
 CLIP_ADV_HIGH = "null"
 DONTS_REPROMPT_ON_SELF_SUCCESS = "True"
 ALPHA = 0.5
 MODEL_PATH = "Qwen/Qwen2.5-3B-Instruct"
+MAX_PROMPT_LENGTH = 1024
+MAX_RESPONSE_LENGTH = 1024
+ROLLOUT_MAX_MODEL_LEN = 2048
+ROLLOUT_MAX_BATCHED_TOKENS = 2048
+ROLLOUT_MAX_NUM_SEQS = 64
+ROLLOUT_GPU_MEMORY_UTILIZATION = 0.2
 
 INCLUDE_ANOTHER_SOLUTION = "False"
 INCLUDE_FAILURE_SOLUTION = "False"
@@ -102,7 +108,8 @@ if __name__ == "__main__":
 
     hydra_args = [
         f"data.train_batch_size={TRAIN_BATCH_SIZE}",
-        "data.max_prompt_length=2048",
+        f"data.max_prompt_length={MAX_PROMPT_LENGTH}",
+        f"data.max_response_length={MAX_RESPONSE_LENGTH}",
         f"data.train_files=[${{inputs.dataset}}/{TRAIN_FILE}]",
         f"data.val_files=[${{inputs.dataset}}/{VAL_FILE}]",
         "trainer.group_name=SDPO-azure",
@@ -113,8 +120,14 @@ if __name__ == "__main__":
         f"actor_rollout_ref.rollout.n={ROLLOUT_BATCH_SIZE}",
         "actor_rollout_ref.rollout.name=vllm",
         "actor_rollout_ref.rollout.tensor_model_parallel_size=1",
-        "actor_rollout_ref.rollout.gpu_memory_utilization=0.75",
+        "actor_rollout_ref.rollout.load_format=safetensors",
+        f"actor_rollout_ref.rollout.gpu_memory_utilization={ROLLOUT_GPU_MEMORY_UTILIZATION}",
+        f"actor_rollout_ref.rollout.max_model_len={ROLLOUT_MAX_MODEL_LEN}",
+        f"actor_rollout_ref.rollout.max_num_batched_tokens={ROLLOUT_MAX_BATCHED_TOKENS}",
+        f"actor_rollout_ref.rollout.max_num_seqs={ROLLOUT_MAX_NUM_SEQS}",
+        "actor_rollout_ref.rollout.enable_chunked_prefill=False",
         f"actor_rollout_ref.model.path={MODEL_PATH}",
+        "actor_rollout_ref.model.use_shm=True",
         "actor_rollout_ref.model.use_remove_padding=False",
         "+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2",
         "+critic.model.override_config.attn_implementation=flash_attention_2",
@@ -129,7 +142,7 @@ if __name__ == "__main__":
         f"actor_rollout_ref.actor.self_distillation.summarize_solutions={SUMMARIZE_SOLUTIONS}",
         f"actor_rollout_ref.actor.self_distillation.summary_k={SUMMARY_K}",
         "actor_rollout_ref.actor.optim.lr_warmup_steps=10",
-        "actor_rollout_ref.rollout.val_kwargs.n=8",
+        f"actor_rollout_ref.rollout.val_kwargs.n={ROLLOUT_BATCH_SIZE}",
     ]
 
     hydra_args_str = " ".join([f'"{x}"' for x in hydra_args])
@@ -147,9 +160,11 @@ export USER=${{USER:-$(whoami)}}
 export WANDB_ENTITY=safety
 export DISABLE_VERSION_CHECK=1
 export USE_AZURE_VERL_TRAINING=1
+export HYDRA_FULL_ERROR=1
 
 echo "Mounted dataset directory: ${{inputs.dataset}}"
 echo "Resolved datastore path: {resolved_data_path}"
+echo "Rollout settings: n={ROLLOUT_BATCH_SIZE}, prompt={MAX_PROMPT_LENGTH}, response={MAX_RESPONSE_LENGTH}, max_model_len={ROLLOUT_MAX_MODEL_LEN}, max_batched_tokens={ROLLOUT_MAX_BATCHED_TOKENS}, gpu_mem_util={ROLLOUT_GPU_MEMORY_UTILIZATION}"
 ls -la "${{inputs.dataset}}" || true
 find "${{inputs.dataset}}" -maxdepth 2 -type f | sort || true
 

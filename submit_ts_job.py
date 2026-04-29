@@ -1,18 +1,17 @@
 from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential
 from azure.ai.ml import MLClient, Input, command, Output
-from azure.ai.ml.entities import JupyterLabJobService, VsCodeJobService, TensorBoardJobService, SshJobService
+from azure.ai.ml.entities import JupyterLabJobService, VsCodeJobService, TensorBoardJobService
 from datetime import datetime
 from argparse import ArgumentParser
 import os
 
 # =========================== CONFIGURATION ===========================
-# SDPO config (aligned with run_local_sdpo.sh)
+# TS here follows the repo's teacher-student SDPO recipe in run_ts_sdpo.sh:
+# student is trained with SDPO loss, but the teacher/ref model is a separate,
+# stronger checkpoint instead of a pure self-teacher setup.
 CONFIG_NAME = "sdpo"
 DATA_ROOT_PATH = "UI/2026-04-28_173802_UTC/opd_hf"
-# Pick one dataset under the Azure folder, e.g. "tooluse", "lcb_v6",
-# or "sciknoweval/chemistry". Leave empty only if the parquet files live
-# directly under DATA_ROOT_PATH.
-DATA_SUBDIR = "lcb_v6"
+DATA_SUBDIR = "tooluse"
 DATASTORE_NAME = "workspaceblobstore"
 TRAIN_FILE = "train.parquet"
 VAL_FILE = "test.parquet"
@@ -24,9 +23,14 @@ LAMBDA = 0.0
 CLIP_ADV_HIGH = "null"
 DONTS_REPROMPT_ON_SELF_SUCCESS = "True"
 ALPHA = 0.5
+
+# Student / teacher split is the main difference from submit_sdpo_job.py
 # MODEL_PATH = "Qwen/Qwen2.5-3B-Instruct"
-MODEL_PATH = "Qwen/Qwen3-4B"
-# MODEL_PATH = "Qwen/Qwen3.6-27B"
+MODEL_PATH = "Qwen/Qwen3-4B-Instruct-2507"
+
+# TEACHER_MODEL_PATH = "Qwen/Qwen2.5-7B-Instruct"
+# TEACHER_MODEL_PATH = "Qwen/Qwen3-30B-A3B-Thinking-2507"
+TEACHER_MODEL_PATH = "Qwen/Qwen3-8B"
 
 MAX_PROMPT_LENGTH = 1024
 MAX_RESPONSE_LENGTH = 1024
@@ -35,11 +39,13 @@ ROLLOUT_MAX_BATCHED_TOKENS = 2048
 ROLLOUT_MAX_NUM_SEQS = 64
 ROLLOUT_GPU_MEMORY_UTILIZATION = 0.2
 
-VAL_ROLLOUT_BATCH_SIZE = 8
 INCLUDE_ANOTHER_SOLUTION = "False"
 INCLUDE_FAILURE_SOLUTION = "False"
 SUMMARIZE_SOLUTIONS = "False"
 SUMMARY_K = 8
+
+# External teacher setup: keep teacher fixed by default.
+TEACHER_UPDATE_RATE = 0.0
 
 # Compute config
 INSTANCE_TYPE = "Singularity.ND96_H100_v5"
@@ -49,25 +55,25 @@ INSTANCE_COUNT = 1
 ENVIRONMENT = "verl-grpo-xtab:7"
 
 # Experiment config
-EXPERIMENT_NAME = "verl-sdpo"
+EXPERIMENT_NAME = "verl-ts"
 # ====================================================================
 
-# Optional HF token
-hf_token = ""
-try:
-    with open("./tokens/.hf.txt", "r", encoding="utf-8") as f:
-        hf_token = f.read().strip()
-except Exception:
+
+def _read_token_file(path: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+hf_token = _read_token_file("./tokens/.hf.txt")
+if not hf_token:
     print("No HF token found, continuing without it")
 
-# Optional W&B token
-wandb_token = os.environ.get("WANDB_API_KEY", "").strip()
+wandb_token = os.environ.get("WANDB_API_KEY", "").strip() or _read_token_file("./tokens/.wandb.txt")
 if not wandb_token:
-    try:
-        with open("./tokens/.wandb.txt", "r", encoding="utf-8") as f:
-            wandb_token = f.read().strip()
-    except Exception:
-        print("No W&B token found, continuing without it")
+    print("No W&B token found, continuing without it")
 
 
 if __name__ == "__main__":
@@ -76,7 +82,7 @@ if __name__ == "__main__":
     parser.add_argument("--resource_group", type=str, default="SingularityH100")
     parser.add_argument("--workspace", type=str, default="H100CentralUS")
     parser.add_argument("--subscription_id", type=str, default="d0c05057-7972-46ff-9bcf-3c932250155e")
-    parser.add_argument("--suffix", type=str, default="azure_sdpo")
+    parser.add_argument("--suffix", type=str, default="azure_ts")
     args = parser.parse_args()
 
     try:
@@ -103,11 +109,13 @@ if __name__ == "__main__":
     resolved_data_path = DATA_ROOT_PATH.rstrip("/")
     if DATA_SUBDIR:
         resolved_data_path = f"{resolved_data_path}/{DATA_SUBDIR.strip('/')}"
-    model_name = MODEL_PATH.replace("/", "-")
+
+    student_name = MODEL_PATH.replace("/", "-")
+    teacher_name = TEACHER_MODEL_PATH.replace("/", "-")
     exp_name = (
-        f"SDPO-Success{INCLUDE_ANOTHER_SOLUTION}-Fail{INCLUDE_FAILURE_SOLUTION}-train{TRAIN_BATCH_SIZE}-alpha{ALPHA}-rollout{ROLLOUT_BATCH_SIZE}"
+        f"TS-train{TRAIN_BATCH_SIZE}-alpha{ALPHA}-rollout{ROLLOUT_BATCH_SIZE}"
         f"-lr{LR}-lambda{LAMBDA}-clip_adv_high{CLIP_ADV_HIGH}"
-        f"-dross{DONTS_REPROMPT_ON_SELF_SUCCESS}-{model_name}-{args.suffix}"
+        f"-dross{DONTS_REPROMPT_ON_SELF_SUCCESS}-{teacher_name}-to-{student_name}-{args.suffix}"
     )
 
     hydra_args = [
@@ -116,7 +124,7 @@ if __name__ == "__main__":
         f"data.max_response_length={MAX_RESPONSE_LENGTH}",
         f"data.train_files=[${{inputs.dataset}}/{TRAIN_FILE}]",
         f"data.val_files=[${{inputs.dataset}}/{VAL_FILE}]",
-        "trainer.group_name=SDPO-azure",
+        "trainer.group_name=TS-azure",
         "trainer.project_name=sdpo_base",
         "trainer.logger=[console,wandb]",
         "trainer.test_freq=5",
@@ -131,22 +139,24 @@ if __name__ == "__main__":
         f"actor_rollout_ref.rollout.max_num_seqs={ROLLOUT_MAX_NUM_SEQS}",
         "actor_rollout_ref.rollout.enable_chunked_prefill=False",
         f"actor_rollout_ref.model.path={MODEL_PATH}",
+        f"+actor_rollout_ref.ref.model.path={TEACHER_MODEL_PATH}",
         "actor_rollout_ref.model.use_shm=True",
         "actor_rollout_ref.model.use_remove_padding=False",
         "+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2",
         "+critic.model.override_config.attn_implementation=flash_attention_2",
         f"actor_rollout_ref.actor.optim.lr={LR}",
-        "actor_rollout_ref.actor.ppo_mini_batch_size=32",
+        f"actor_rollout_ref.actor.ppo_mini_batch_size={TRAIN_BATCH_SIZE}",
         "actor_rollout_ref.actor.self_distillation.distillation_topk=100",
         "algorithm.rollout_correction.rollout_is=token",
         f"actor_rollout_ref.actor.self_distillation.dont_reprompt_on_self_success={DONTS_REPROMPT_ON_SELF_SUCCESS}",
         f"actor_rollout_ref.actor.self_distillation.alpha={ALPHA}",
+        f"actor_rollout_ref.actor.self_distillation.teacher_update_rate={TEACHER_UPDATE_RATE}",
         f"actor_rollout_ref.actor.self_distillation.include_another_solution={INCLUDE_ANOTHER_SOLUTION}",
         f"actor_rollout_ref.actor.self_distillation.include_failure_solution={INCLUDE_FAILURE_SOLUTION}",
         f"actor_rollout_ref.actor.self_distillation.summarize_solutions={SUMMARIZE_SOLUTIONS}",
         f"actor_rollout_ref.actor.self_distillation.summary_k={SUMMARY_K}",
         "actor_rollout_ref.actor.optim.lr_warmup_steps=10",
-        f"actor_rollout_ref.rollout.val_kwargs.n={VAL_ROLLOUT_BATCH_SIZE}",
+        f"actor_rollout_ref.rollout.val_kwargs.n={ROLLOUT_BATCH_SIZE}",
     ]
 
     hydra_args_str = " ".join([f'"{x}"' for x in hydra_args])
@@ -168,6 +178,8 @@ export HYDRA_FULL_ERROR=1
 
 echo "Mounted dataset directory: ${{inputs.dataset}}"
 echo "Resolved datastore path: {resolved_data_path}"
+echo "Teacher model: {TEACHER_MODEL_PATH}"
+echo "Student model: {MODEL_PATH}"
 echo "Rollout settings: n={ROLLOUT_BATCH_SIZE}, prompt={MAX_PROMPT_LENGTH}, response={MAX_RESPONSE_LENGTH}, max_model_len={ROLLOUT_MAX_MODEL_LEN}, max_batched_tokens={ROLLOUT_MAX_BATCHED_TOKENS}, gpu_mem_util={ROLLOUT_GPU_MEMORY_UTILIZATION}"
 ls -la "${{inputs.dataset}}" || true
 find "${{inputs.dataset}}" -maxdepth 2 -type f | sort || true
@@ -175,7 +187,7 @@ find "${{inputs.dataset}}" -maxdepth 2 -type f | sort || true
 bash "$PROJECT_ROOT/training/verl_training.sh" "{exp_name}" "{CONFIG_NAME}" "{resolved_data_path}" {hydra_args_str}
 """
 
-    display_name = f"sdpo-{timestamp}"
+    display_name = f"ts-{timestamp}"
 
     training_job = command(
         code=".",
@@ -194,7 +206,7 @@ bash "$PROJECT_ROOT/training/verl_training.sh" "{exp_name}" "{CONFIG_NAME}" "{re
                     f"azureml://subscriptions/{args.subscription_id}"
                     f"/resourcegroups/{args.resource_group}"
                     f"/workspaces/{args.workspace}"
-                    f"/datastores/workspaceblobstore/paths/cheng/sdpo_models/{timestamp}/"
+                    f"/datastores/workspaceblobstore/paths/cheng/ts_models/{timestamp}/"
                 ),
                 mode="rw_mount",
             ),
@@ -228,11 +240,9 @@ bash "$PROJECT_ROOT/training/verl_training.sh" "{exp_name}" "{CONFIG_NAME}" "{re
             "jupyter": JupyterLabJobService(),
             "vscode": VsCodeJobService(),
             "tensorboard": TensorBoardJobService(log_dir="output/tblog"),
-            # 如果你有固定公钥可以加上；没有就先注释掉
-            # "ssh": SshJobService(ssh_public_keys="ssh-rsa ..."),
         },
         display_name=display_name,
-        description="Submit SDPO training job via verl_training.sh",
+        description="Submit TS teacher-student SDPO training job via verl_training.sh",
     )
 
     returned_job = ml_client.jobs.create_or_update(training_job, experiment_name=EXPERIMENT_NAME)
@@ -240,4 +250,4 @@ bash "$PROJECT_ROOT/training/verl_training.sh" "{exp_name}" "{CONFIG_NAME}" "{re
     print("Job name:", returned_job.name)
     print("Experiment:", EXPERIMENT_NAME)
     print("Display name:", display_name)
-    print("SDPO job submitted successfully.")
+    print("TS job submitted successfully.")

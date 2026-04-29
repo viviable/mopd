@@ -125,12 +125,40 @@ def _convert_mbpp(rows: list[dict]) -> list[dict]:
     return converted
 
 
+def _build_math_prompt(problem: str) -> list[dict[str, str]]:
+    instruction = "Let's think step by step and output the final answer within \\boxed{}."
+    return [{"role": "user", "content": f"{problem} {instruction}"}]
+
+
+def _convert_math(rows: list[dict], data_source: str) -> list[dict]:
+    converted = []
+    for idx, row in enumerate(rows):
+        converted.append(
+            {
+                "id": str(row["id"]),
+                "ability": "math",
+                "data_source": data_source,
+                "extra_info": {
+                    "index": idx,
+                    "split": "test",
+                    "answer": row["answer"],
+                    "question": row["problem"],
+                },
+                "reward_model": {"ground_truth": row["answer"], "style": "rule"},
+                "prompt": _build_math_prompt(row["problem"]),
+            }
+        )
+    return converted
+
+
 def convert_evalplus_to_parquet(dataset_name: str, input_path: str, output_path: str) -> None:
     raw_rows = _read_jsonl(Path(input_path))
     if dataset_name == "humaneval":
         rows = _convert_humaneval(raw_rows)
     elif dataset_name == "mbpp":
         rows = _convert_mbpp(raw_rows)
+    elif dataset_name in {"hmmt25_feb", "hmmt25_nov"}:
+        rows = _convert_math(raw_rows, data_source=dataset_name)
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
@@ -148,8 +176,8 @@ if __name__ == "__main__":
         "--dataset",
         type=str,
         required=True,
-        choices=["humaneval", "mbpp"],
-        help="EvalPlus dataset name.",
+        choices=["humaneval", "mbpp", "hmmt25_feb", "hmmt25_nov"],
+        help="Dataset name.",
     )
     parser.add_argument(
         "--input_path",

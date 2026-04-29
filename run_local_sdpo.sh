@@ -15,11 +15,11 @@ CONFIG_NAME="sdpo"
 # DATA_PATH="datasets/sciknoweval/physics"
 # DATA_PATH="datasets/sciknoweval/material"
 
-DATA_PATH="datasets/lcb_v6"
+# DATA_PATH="datasets/lcb_v6"
 # DATA_PATH="datasets/G-OPD-Training-Data/Eurus"
 # DATA_PATH="datasets/gsm8k"
 # DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2025"
-# DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2024"
+DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_hmmt2025_feb"
 # DATA_PATH="datasets/G-OPD-Training-Data/opd-math"
 # Optional validation override. Useful when training on one dataset but validating
 # on a separate benchmark parquet, e.g. Humaneval+/MBPP+.
@@ -42,9 +42,17 @@ FAILURE_SOLUTION_CONDITION=${FAILURE_SOLUTION_CONDITION:-when_no_solution}
 SUMMARY_SOURCE=${SUMMARY_SOURCE:-success}
 # MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
 MODEL_PATH="Qwen/Qwen3-4B-Instruct-2507"
+# MODEL_PATH="Qwen/Qwen3.5-4B"
 # MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-4B}"
 ROLLOUT_BACKEND="${ROLLOUT_BACKEND:-vllm}"
 
+# Qwen3.5 needs a newer attention stack than Qwen3. Default to SDPA there unless
+# the environment explicitly opts back into FlashAttention-2.
+DEFAULT_ATTN_IMPLEMENTATION="flash_attention_2"
+# if [[ "${MODEL_PATH}" == Qwen/Qwen3.5-* ]]; then
+#     DEFAULT_ATTN_IMPLEMENTATION="sdpa"
+# fi
+ATTN_IMPLEMENTATION="${ATTN_IMPLEMENTATION:-$DEFAULT_ATTN_IMPLEMENTATION}"
 
 ROLLOUT_MAX_MODEL_LEN=4096
 
@@ -87,21 +95,21 @@ if [ "${ROLLOUT_TP_SIZE}" -gt "${VISIBLE_GPUS}" ]; then
     ROLLOUT_TP_SIZE=${VISIBLE_GPUS}
 fi
 
-if [ "${ROLLOUT_BACKEND}" = "vllm" ] && [[ "${MODEL_PATH}" == Qwen/Qwen3.5-* ]]; then
-    cat <<'EOF'
-Unsupported local combo detected:
-- rollout backend: vllm
-- model: Qwen3.5
+# if [ "${ROLLOUT_BACKEND}" = "vllm" ] && [[ "${MODEL_PATH}" == Qwen/Qwen3.5-* ]]; then
+#     cat <<'EOF'
+# Unsupported local combo detected:
+# - rollout backend: vllm
+# - model: Qwen3.5
 
-This repo's async rollout path uses the vLLM V1 engine, and vllm==0.8.5.post1 does not support
-Qwen3.5 architectures here. Use one of these instead:
-- MODEL_PATH=Qwen/Qwen3-4B-Instruct-2507 ./run_local_sdpo.sh
-- MODEL_PATH=Qwen/Qwen2.5-3B-Instruct ./run_local_sdpo.sh
-- upgrade vllm to a version that supports Qwen3.5 in this async path
-- switch to sglang if your environment supports it: ROLLOUT_BACKEND=sglang ./run_local_sdpo.sh
-EOF
-    exit 1
-fi
+# This repo's async rollout path uses the vLLM V1 engine, and vllm==0.8.5.post1 does not support
+# Qwen3.5 architectures here. Use one of these instead:
+# - MODEL_PATH=Qwen/Qwen3-4B-Instruct-2507 ./run_local_sdpo.sh
+# - MODEL_PATH=Qwen/Qwen2.5-3B-Instruct ./run_local_sdpo.sh
+# - upgrade vllm to a version that supports Qwen3.5 in this async path
+# - switch to sglang if your environment supports it: ROLLOUT_BACKEND=sglang ./run_local_sdpo.sh
+# EOF
+#     exit 1
+# fi
 
 # Allow overriding experiment name suffix
 SUFFIX=${1:-"local_sdpo"}
@@ -113,6 +121,41 @@ SUFFIX=${1:-"local_sdpo"}
 # Get the directory where this script is located
 export PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export PYTHONPATH=$PROJECT_ROOT:$PYTHONPATH
+
+resolve_cuda_toolkit_for_torch() {
+    if ! command -v python >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local torch_cuda_version=""
+    torch_cuda_version=$(python - <<'PY' 2>/dev/null
+import torch
+print(torch.version.cuda or "")
+PY
+)
+
+    if [ -z "$torch_cuda_version" ]; then
+        return 0
+    fi
+
+    local preferred_cuda_home="/usr/local/cuda-${torch_cuda_version}"
+    if [ ! -d "$preferred_cuda_home" ]; then
+        echo "PyTorch expects CUDA ${torch_cuda_version}, but ${preferred_cuda_home} is not installed. Leaving current CUDA toolkit unchanged."
+        return 0
+    fi
+
+    export CUDA_HOME="$preferred_cuda_home"
+    export PATH="$CUDA_HOME/bin:$PATH"
+    if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+        export LD_LIBRARY_PATH="$CUDA_HOME/lib64:$LD_LIBRARY_PATH"
+    else
+        export LD_LIBRARY_PATH="$CUDA_HOME/lib64"
+    fi
+
+    echo "Resolved CUDA toolkit from PyTorch: torch.version.cuda=${torch_cuda_version}, CUDA_HOME=${CUDA_HOME}"
+}
+
+resolve_cuda_toolkit_for_torch
 
 # Bootstrap the canonical GSM8K parquet layout when requested.
 if [ "$DATA_PATH" = "datasets/gsm8k" ]; then
@@ -161,8 +204,8 @@ ARGS=(
   "actor_rollout_ref.rollout.max_num_batched_tokens=$ROLLOUT_MAX_MODEL_LEN"
   "actor_rollout_ref.model.path=$MODEL_PATH"
   "actor_rollout_ref.model.use_remove_padding=False"
-  "+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2"
-  "+critic.model.override_config.attn_implementation=flash_attention_2"
+  "+actor_rollout_ref.model.override_config.attn_implementation=$ATTN_IMPLEMENTATION"
+  "+critic.model.override_config.attn_implementation=$ATTN_IMPLEMENTATION"
   "actor_rollout_ref.actor.optim.lr=$LR"
   "actor_rollout_ref.actor.data_loader_seed=$SEED"
   "critic.data_loader_seed=$SEED"
@@ -180,8 +223,17 @@ ARGS=(
   "actor_rollout_ref.actor.self_distillation.summary_from_all=$SUMMARY_FROM_ALL"
   "actor_rollout_ref.actor.self_distillation.summary_k=$SUMMARY_K"
   "actor_rollout_ref.actor.optim.lr_warmup_steps=10"
-  "actor_rollout_ref.rollout.val_kwargs.n=8"
+  "actor_rollout_ref.rollout.val_kwargs.n=32"
 )
+
+# FSDP initializes trainable modules in fp32 by default in this repo. That is
+# incompatible with FlashAttention-2, which only supports fp16/bf16.
+if [ "$ATTN_IMPLEMENTATION" = "flash_attention_2" ]; then
+  ARGS+=(
+    "actor_rollout_ref.actor.fsdp_config.model_dtype=bfloat16"
+    "critic.model.fsdp_config.model_dtype=bfloat16"
+  )
+fi
 
 if [ -n "$VAL_DATA_PATH" ]; then
   ARGS+=("data.val_files=['$PROJECT_ROOT/$VAL_DATA_PATH']")
@@ -198,6 +250,7 @@ echo "Data: $DATA_PATH"
 echo "Validation data: ${VAL_DATA_PATH:-${DATA_PATH}/test.parquet}"
 echo "Model: $MODEL_PATH"
 echo "Rollout backend: $ROLLOUT_BACKEND"
+echo "Attention implementation: $ATTN_IMPLEMENTATION"
 echo "Seed: $SEED"
 echo "Checkpoint dir: $CKPT_DIR"
 echo "Summary from all: $SUMMARY_FROM_ALL"

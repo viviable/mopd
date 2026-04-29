@@ -190,6 +190,17 @@ def is_correct_minerva(
     return (pred == gt), pred
 
 
+def is_correct_boxed_or_minerva(
+    solution_str: str, gt: str, pause_tokens_index: Optional[list[int]] = None
+) -> tuple[bool, str]:
+    """Prefer boxed answers, then fall back to Minerva-style `Answer:` extraction."""
+    boxed_correct, boxed_pred = is_correct_strict_box(solution_str, gt, pause_tokens_index)
+    if boxed_pred is not None:
+        return boxed_correct == 1, boxed_pred
+
+    return is_correct_minerva(solution_str, gt)
+
+
 def is_correct_strict_box(
     pred: str, gt: str, pause_tokens_index: Optional[list[int]] = None
 ) -> tuple[int, Optional[str]]:
@@ -235,7 +246,7 @@ def verify(
         correct, pred = is_correct_strict_box(solution_str, answer, pause_tokens_index)
         return correct == 1, pred
 
-    correct, pred = is_correct_minerva(solution_str, answer)
+    correct, pred = is_correct_boxed_or_minerva(solution_str, answer, pause_tokens_index)
     return correct, pred
 
 

@@ -56,7 +56,7 @@ def default_compute_score(
 
         # from . import math_verify
         # res = math_verify.compute_score(solution_str, ground_truth)
-    elif data_source in ["math_dapo", "math", "math_dapo_reasoning", "DeepMath-103K"] or data_source.startswith("aime") or data_source.startswith("AIME"):
+    elif data_source in ["math_dapo", "math", "math_dapo_reasoning", "DeepMath-103K"] or data_source.startswith("aime") or data_source.startswith("AIME") or data_source.startswith("hmmt"):
         from . import math_dapo
 
         res = math_dapo.compute_score(solution_str, ground_truth)

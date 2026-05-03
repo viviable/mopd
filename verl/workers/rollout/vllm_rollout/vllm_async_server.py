@@ -30,6 +30,7 @@ import vllm.entrypoints.cli.serve
 import zmq
 from packaging import version
 from ray.actor import ActorHandle
+from vllm.platforms import current_platform
 from vllm import SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.openai.api_server import (
@@ -307,6 +308,12 @@ class ExternalZeroMQDistributedExecutor(Executor):
         self.collective_rpc("init_worker", args=([kwargs],))
         self.collective_rpc("init_device")
         self.collective_rpc("load_model")
+
+        # Keep external executor init aligned with upstream vLLM ray executor.
+        def _update_block_size(worker):
+            current_platform.update_block_size_for_backend(worker.vllm_config)
+
+        self.collective_rpc(_update_block_size)
 
     if _VLLM_VERSION >= version.parse("0.12.0"):
 

@@ -11,7 +11,7 @@ CONFIG_NAME="sdpo"
 # Default to ToolUse dataset
 # DATA_PATH="datasets/tooluse"
 # DATA_PATH="datasets/sciknoweval/biology"
-DATA_PATH="datasets/sciknoweval/chemistry"
+# DATA_PATH="datasets/sciknoweval/chemistry"
 # DATA_PATH="datasets/sciknoweval/physics"
 # DATA_PATH="datasets/sciknoweval/material"
 
@@ -19,7 +19,7 @@ DATA_PATH="datasets/sciknoweval/chemistry"
 # DATA_PATH="datasets/G-OPD-Training-Data/Eurus"
 # DATA_PATH="datasets/gsm8k"
 # DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_aime2025"
-# DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_hmmt2025_feb"
+DATA_PATH="datasets/G-OPD-Training-Data/DeepMath-103K_test_hmmt2025_feb"
 # DATA_PATH="datasets/G-OPD-Training-Data/opd-math"
 # Optional validation override. Useful when training on one dataset but validating
 # on a separate benchmark parquet, e.g. Humaneval+/MBPP+.
@@ -38,17 +38,17 @@ CLIP_ADV_HIGH=null
 DONTS_REPROMPT_ON_SELF_SUCCESS=${DONTS_REPROMPT_ON_SELF_SUCCESS:-True}
 ALPHA=0.5
 INCLUDE_PRIMARY_SOLUTION=${INCLUDE_PRIMARY_SOLUTION:-True}
-FAILURE_SOLUTION_CONDITION=${FAILURE_SOLUTION_CONDITION:-always}
+FAILURE_SOLUTION_CONDITION=${FAILURE_SOLUTION_CONDITION:-when_no_solution}
 SUMMARY_SOURCE=${SUMMARY_SOURCE:-success}
 # MODEL_PATH="Qwen/Qwen2.5-3B-Instruct"
-MODEL_PATH="Qwen/Qwen3-4B"
-# MODEL_PATH="Qwen/Qwen3.5-4B"
+# MODEL_PATH="Qwen/Qwen3-4B-Instruct-2507"
+MODEL_PATH="Qwen/Qwen3.6-27B"
 # MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3.5-4B}"
 ROLLOUT_BACKEND="${ROLLOUT_BACKEND:-vllm}"
 
-# Qwen3.5 needs a newer attention stack than Qwen3. Default to SDPA there unless
-# the environment explicitly opts back into FlashAttention-2.
-DEFAULT_ATTN_IMPLEMENTATION="flash_attention_2"
+# Qwen3.6 (qwen3_5 arch) uses hybrid linear+full attention and a vision encoder;
+# flash_attention_2 may fail on the vision encoder. Use SDPA for safety.
+DEFAULT_ATTN_IMPLEMENTATION="sdpa"
 # if [[ "${MODEL_PATH}" == Qwen/Qwen3.5-* ]]; then
 #     DEFAULT_ATTN_IMPLEMENTATION="sdpa"
 # fi
@@ -57,7 +57,7 @@ ATTN_IMPLEMENTATION="${ATTN_IMPLEMENTATION:-$DEFAULT_ATTN_IMPLEMENTATION}"
 ROLLOUT_MAX_MODEL_LEN=4096
 
 
-INCLUDE_ANOTHER_SOLUTION=${INCLUDE_ANOTHER_SOLUTION:-False}
+INCLUDE_ANOTHER_SOLUTION=${INCLUDE_ANOTHER_SOLUTION:-True}
 INCLUDE_FAILURE_SOLUTION=${INCLUDE_FAILURE_SOLUTION:-True}
 SUMMARIZE_SOLUTIONS=${SUMMARIZE_SOLUTIONS:-False}
 SUMMARY_FROM_ALL=${SUMMARY_FROM_ALL:-False}
@@ -89,7 +89,7 @@ if [ "${N_GPUS_PER_NODE}" -gt "${VISIBLE_GPUS}" ]; then
     export N_GPUS_PER_NODE=${VISIBLE_GPUS}
 fi
 
-ROLLOUT_TP_SIZE=1
+ROLLOUT_TP_SIZE=2
 if [ "${ROLLOUT_TP_SIZE}" -gt "${VISIBLE_GPUS}" ]; then
     echo "ROLLOUT_TP_SIZE (${ROLLOUT_TP_SIZE}) > visible GPUs (${VISIBLE_GPUS}); clamping to ${VISIBLE_GPUS}."
     ROLLOUT_TP_SIZE=${VISIBLE_GPUS}
@@ -121,6 +121,9 @@ SUFFIX=${1:-"local_sdpo"}
 # Get the directory where this script is located
 export PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export PYTHONPATH=$PROJECT_ROOT:$PYTHONPATH
+
+# Use locally cached models
+export HF_HOME=/project/flame/wyu3/huggingface
 
 resolve_cuda_toolkit_for_torch() {
     if ! command -v python >/dev/null 2>&1; then
@@ -178,16 +181,15 @@ export WANDB_ENTITY="safety"
 # =============================================================================
 
 MODEL_NAME=$(echo "$MODEL_PATH" | tr '/' '-')
-TEACHER_CONTEXT_TAG="P${INCLUDE_PRIMARY_SOLUTION}-A${INCLUDE_ANOTHER_SOLUTION}-F${INCLUDE_FAILURE_SOLUTION}-FC${FAILURE_SOLUTION_CONDITION}-S${SUMMARIZE_SOLUTIONS}"
-EXP_NAME="${TEACHER_CONTEXT_TAG}-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
+TEACHER_CONTEXT_TAG="ctxP${INCLUDE_PRIMARY_SOLUTION}-A${INCLUDE_ANOTHER_SOLUTION}-F${INCLUDE_FAILURE_SOLUTION}-FC${FAILURE_SOLUTION_CONDITION}-S${SUMMARIZE_SOLUTIONS}"
+EXP_NAME="Success${INCLUDE_ANOTHER_SOLUTION}Fail${INCLUDE_FAILURE_SOLUTION}-${TEACHER_CONTEXT_TAG}-${DATA_PATH##*/}-SDPO-train${TRAIN_BATCH_SIZE}-alpha${ALPHA}-rollout${ROLLOUT_BATCH_SIZE}-lr${LR}-lambda${LAMBDA}-clip_adv_high${CLIP_ADV_HIGH}-dross${DONTS_REPROMPT_ON_SELF_SUCCESS}-${MODEL_NAME}-${SUFFIX}"
 CKPT_DIR="/project/flame/wyu3/mopd/${EXP_NAME}"
 ROLLOUT_DATA_DIR="${ROLLOUT_DATA_DIR:-/project/flame/wyu3/mopd/rollout/${EXP_NAME}}"
-VALIDATION_DATA_DIR="${VALIDATION_DATA_DIR:-/project/flame/wyu3/mopd/validation/${EXP_NAME}}"
 
 ARGS=(
   "data.train_batch_size=$TRAIN_BATCH_SIZE"
   "data.seed=$SEED"
-  "data.max_prompt_length=4096"
+  "data.max_prompt_length=2048"
   "trainer.group_name=SDPO-local"
   "trainer.project_name=sdpo_base"
   "trainer.logger=[console,wandb]"
@@ -201,7 +203,7 @@ ARGS=(
   "actor_rollout_ref.rollout.n=$ROLLOUT_BATCH_SIZE"
   "actor_rollout_ref.rollout.name=$ROLLOUT_BACKEND"
   "actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE"
-  "actor_rollout_ref.rollout.gpu_memory_utilization=0.6"
+  "actor_rollout_ref.rollout.gpu_memory_utilization=0.7"
   "actor_rollout_ref.rollout.max_model_len=$ROLLOUT_MAX_MODEL_LEN"
   "actor_rollout_ref.rollout.max_num_batched_tokens=$ROLLOUT_MAX_MODEL_LEN"
   "actor_rollout_ref.model.path=$MODEL_PATH"
@@ -225,21 +227,15 @@ ARGS=(
   "actor_rollout_ref.actor.self_distillation.summary_from_all=$SUMMARY_FROM_ALL"
   "actor_rollout_ref.actor.self_distillation.summary_k=$SUMMARY_K"
   "actor_rollout_ref.actor.optim.lr_warmup_steps=10"
-  "actor_rollout_ref.rollout.val_kwargs.n=8"
+  "actor_rollout_ref.rollout.val_kwargs.n=32"
 )
 
-if [[ "${MODEL_PATH}" == Qwen/Qwen3-* ]]; then
-  ARGS+=("++data.apply_chat_template_kwargs.enable_thinking=True")
-fi
-
-# FSDP initializes trainable modules in fp32 by default in this repo. That is
-# incompatible with FlashAttention-2, which only supports fp16/bf16.
-if [ "$ATTN_IMPLEMENTATION" = "flash_attention_2" ]; then
-  ARGS+=(
-    "actor_rollout_ref.actor.fsdp_config.model_dtype=bfloat16"
-    "critic.model.fsdp_config.model_dtype=bfloat16"
-  )
-fi
+# FSDP defaults to fp32 for the actor, which would double memory for a 27B model.
+# Always force bfloat16 regardless of attention implementation.
+ARGS+=(
+  "actor_rollout_ref.actor.fsdp_config.model_dtype=bfloat16"
+  "critic.model.fsdp_config.model_dtype=bfloat16"
+)
 
 if [ -n "$VAL_DATA_PATH" ]; then
   ARGS+=("data.val_files=['$PROJECT_ROOT/$VAL_DATA_PATH']")
@@ -247,10 +243,6 @@ fi
 
 if [ -n "$ROLLOUT_DATA_DIR" ]; then
   ARGS+=("trainer.rollout_data_dir=$ROLLOUT_DATA_DIR")
-fi
-
-if [ -n "$VALIDATION_DATA_DIR" ]; then
-  ARGS+=("trainer.validation_data_dir=$VALIDATION_DATA_DIR")
 fi
 
 echo "----------------------------------------------------------------"
@@ -266,7 +258,6 @@ echo "Checkpoint dir: $CKPT_DIR"
 echo "Summary from all: $SUMMARY_FROM_ALL"
 echo "Teacher context: primary=${INCLUDE_PRIMARY_SOLUTION}, another=${INCLUDE_ANOTHER_SOLUTION}, failure=${INCLUDE_FAILURE_SOLUTION}, failure_condition=${FAILURE_SOLUTION_CONDITION}, summarize=${SUMMARIZE_SOLUTIONS}"
 echo "Rollout data dir: ${ROLLOUT_DATA_DIR:-disabled}"
-echo "Validation data dir: ${VALIDATION_DATA_DIR:-disabled}"
 echo "Resolved GPUs: visible=${VISIBLE_GPUS}, trainer.n_gpus_per_node=${N_GPUS_PER_NODE}, rollout.tp=${ROLLOUT_TP_SIZE}"
 echo "----------------------------------------------------------------"
 

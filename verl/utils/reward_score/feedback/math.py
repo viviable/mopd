@@ -69,6 +69,30 @@ def remove_boxed(s: str) -> str:
         return ""
 
 
+def normalize_answer_string(text: str) -> str:
+    """Normalize lightweight LaTeX/style variants before exact comparison.
+
+    This handles common formatting-only differences in DeepMath/HMMT style data,
+    such as ``\\dfrac`` vs ``\\frac`` and ``\\text{Yes}`` vs ``Yes``.
+    """
+    normalized = text.strip()
+    normalized = normalized.replace(r"\dfrac", r"\frac")
+    normalized = normalized.replace(r"\tfrac", r"\frac")
+    normalized = normalized.replace(r"\left", "")
+    normalized = normalized.replace(r"\right", "")
+    normalized = normalized.replace("$", "")
+
+    text_wrapper_pattern = re.compile(r"^\\text\{([^{}]*)\}$")
+    while True:
+        match = text_wrapper_pattern.fullmatch(normalized)
+        if match is None:
+            break
+        normalized = match.group(1).strip()
+
+    normalized = re.sub(r"\s+", "", normalized)
+    return normalized
+
+
 class timeout:
     def __init__(self, seconds=1, error_message="Timeout"):
         self.seconds = seconds
@@ -98,18 +122,21 @@ def is_correct_strict_box(
     Returns:
         Tuple of (score, extracted_prediction)
     """
-    # Extract the relevant part of the prediction
+    # Search the whole final solution text for the last boxed answer. The previous
+    # tail-only heuristic missed valid answers when the model added a short
+    # explanation after ``\boxed{...}``.
     if pause_tokens_index is not None:
         assert len(pause_tokens_index) == 4
-        pred = pred[pause_tokens_index[-1] - 100 :]
-    else:
-        pred = pred[-100:]
 
     # Extract and check the boxed answer
     boxed_pred = last_boxed_only_string(pred)
     extracted_pred = remove_boxed(boxed_pred) if boxed_pred is not None else None
+    if extracted_pred is None:
+        return False, extracted_pred
 
-    return extracted_pred == gt, extracted_pred
+    normalized_pred = normalize_answer_string(extracted_pred)
+    normalized_gt = normalize_answer_string(gt)
+    return normalized_pred == normalized_gt, extracted_pred
 
 
 def verify(
@@ -134,8 +161,8 @@ def verify(
     if not correct and pred != "":
         try:
             with timeout(seconds=5):
-                gold_expr = mv_parse(answer)
-                pred_expr = mv_parse(pred)
+                gold_expr = mv_parse(normalize_answer_string(answer))
+                pred_expr = mv_parse(normalize_answer_string(pred))
                 correct = mv_verify(gold_expr, pred_expr)
         except Exception:  # ignore any parsing/verification errors
             pass

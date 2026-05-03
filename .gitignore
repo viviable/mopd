@@ -138,3 +138,8 @@ DOCKER_PLAN_GH200.md
 # local analysis outputs (can be very large)
 analysis_outputs/chemistry_context_variants.jsonl
 analysis_outputs/chemistry_context_variants_v2.jsonl
+analysis_outputs/lcbv6_*.json
+analysis_outputs/lcbv6_*.jsonl
+analysis_outputs/lcbv6_rollout_dataset/
+analysis_outputs/plots_lcbv6_self_rollout/
+*.whl

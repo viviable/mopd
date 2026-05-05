@@ -36,6 +36,14 @@ SFT_MAX_LENGTH = 2048
 SFT_LR = 1e-5
 SFT_TOTAL_EPOCHS = 3
 SFT_TEST_FREQ = 5
+SFT_SAVE_FREQ = 5
+
+EVAL_ROLLOUT_N = 8
+EVAL_BATCH_SIZE = 32
+EVAL_TEMPERATURE = 0.0
+EVAL_TOP_P = 1.0
+EVAL_DO_SAMPLE = "False"
+EVAL_TP = 1
 
 INSTANCE_TYPE = "Singularity.ND96_H100_v5"
 INSTANCE_COUNT = 1
@@ -147,6 +155,7 @@ export USE_AZURE_VERL_TRAINING=1
 export HYDRA_FULL_ERROR=1
 export VLLM_USE_V1=1
 export VLLM_ALLREDUCE_USE_SYMM_MEM=0
+export TASK={resolved_data_path}
 
 GEN_DIR=/tmp/gkd_teacher_rollouts
 mkdir -p "$GEN_DIR"
@@ -225,31 +234,136 @@ python "$PROJECT_ROOT/convert_gkd_rollouts.py" \\
   --train-dst "$SFT_TRAIN" \\
   --val-dst "$SFT_VAL"
 
-echo "Training student on teacher rollouts"
-torchrun --standalone --nnodes=1 --nproc_per_node={GPUS_PER_NODE} \\
-  -m verl.trainer.sft_trainer \\
-  --config-name sft_trainer_engine \\
-  "data.train_files=$SFT_TRAIN" \\
-  "data.val_files=$SFT_VAL" \\
-  "data.train_batch_size={SFT_TRAIN_BATCH_SIZE}" \\
-  "data.micro_batch_size_per_gpu={SFT_MICRO_BATCH_SIZE_PER_GPU}" \\
-  "data.max_length={SFT_MAX_LENGTH}" \\
-  "data.truncation=right" \\
-  "data.ignore_input_ids_mismatch=True" \\
-  "model.path={args.student_model}" \\
-  "model.trust_remote_code=True" \\
-  "model.use_shm=True" \\
-  "engine.model_dtype=bfloat16" \\
-  "optim.lr={SFT_LR}" \\
-  "trainer.project_name=gkd_base" \\
-  "trainer.experiment_name={exp_name}" \\
-  "trainer.default_local_dir=$CKPT_DIR" \\
-  "trainer.logger=[console,wandb]" \\
-  "trainer.total_epochs={SFT_TOTAL_EPOCHS}" \\
-  "trainer.n_gpus_per_node={GPUS_PER_NODE}" \\
-  "trainer.nnodes=1" \\
-  "trainer.test_freq={SFT_TEST_FREQ}" \\
-  "trainer.save_freq=1"
+SFT_TOTAL_STEPS=$(python - <<'PY'
+import math
+import os
+import pandas as pd
+
+train_path = os.environ["SFT_TRAIN"]
+n_rows = len(pd.read_parquet(train_path))
+steps_per_epoch = n_rows // {SFT_TRAIN_BATCH_SIZE}
+total_steps = steps_per_epoch * {SFT_TOTAL_EPOCHS}
+print(max(total_steps, 1))
+PY
+)
+echo "SFT total training steps: $SFT_TOTAL_STEPS"
+
+EVAL_DIR="$CKPT_DIR/gkd_eval"
+mkdir -p "$EVAL_DIR"
+
+for TARGET_STEP in $(seq {SFT_TEST_FREQ} {SFT_TEST_FREQ} "$SFT_TOTAL_STEPS"); do
+  echo "Training student on teacher rollouts through step $TARGET_STEP"
+  torchrun --standalone --nnodes=1 --nproc_per_node={GPUS_PER_NODE} \\
+    -m verl.trainer.sft_trainer \\
+    --config-name sft_trainer_engine \\
+    "data.train_files=$SFT_TRAIN" \\
+    "data.val_files=$SFT_VAL" \\
+    "data.train_batch_size={SFT_TRAIN_BATCH_SIZE}" \\
+    "data.micro_batch_size_per_gpu={SFT_MICRO_BATCH_SIZE_PER_GPU}" \\
+    "data.max_length={SFT_MAX_LENGTH}" \\
+    "data.truncation=right" \\
+    "data.ignore_input_ids_mismatch=True" \\
+    "model.path={args.student_model}" \\
+    "model.trust_remote_code=True" \\
+    "model.use_shm=True" \\
+    "engine.model_dtype=bfloat16" \\
+    "optim.lr={SFT_LR}" \\
+    "trainer.project_name=gkd_base" \\
+    "trainer.experiment_name={exp_name}" \\
+    "trainer.default_local_dir=$CKPT_DIR" \\
+    "trainer.logger=[console,wandb]" \\
+    "trainer.total_epochs={SFT_TOTAL_EPOCHS}" \\
+    "trainer.total_training_steps=$TARGET_STEP" \\
+    "trainer.n_gpus_per_node={GPUS_PER_NODE}" \\
+    "trainer.nnodes=1" \\
+    "trainer.test_freq=-1" \\
+    "trainer.save_freq={SFT_SAVE_FREQ}" \\
+    "checkpoint.save_contents=[model,optimizer,extra,hf_model]" \\
+    "checkpoint.load_contents=[model,optimizer,extra]"
+
+  HF_CKPT="$CKPT_DIR/global_step_$TARGET_STEP/huggingface"
+  if [ ! -d "$HF_CKPT" ]; then
+    echo "Expected HF checkpoint not found: $HF_CKPT"
+    exit 1
+  fi
+
+  ray stop --force || true
+
+  echo "Running SDPO-style rollout eval for GKD checkpoint step $TARGET_STEP"
+  python -m verl.trainer.main_ppo \\
+    --config-name sdpo \\
+    "data.train_files=[${{inputs.dataset}}/{VAL_FILE}]" \\
+    "data.val_files=[${{inputs.dataset}}/{VAL_FILE}]" \\
+    "vars.task={resolved_data_path}" \\
+    "data.prompt_key=prompt" \\
+    "data.train_batch_size={EVAL_BATCH_SIZE}" \\
+    "data.max_prompt_length={MAX_PROMPT_LENGTH}" \\
+    "data.max_response_length={MAX_RESPONSE_LENGTH}" \\
+    "data.validation_shuffle=False" \\
+    "trainer.group_name=GKD-azure-eval" \\
+    "trainer.project_name=gkd_base" \\
+    "trainer.experiment_name={exp_name}-eval-step$TARGET_STEP" \\
+    "trainer.default_local_dir=$CKPT_DIR/eval_ckpts/step_$TARGET_STEP" \\
+    "trainer.logger=[console,wandb]" \\
+    "trainer.val_only=True" \\
+    "trainer.val_before_train=True" \\
+    "trainer.test_freq=-1" \\
+    "trainer.n_gpus_per_node={GPUS_PER_NODE}" \\
+    "trainer.nnodes=1" \\
+    "trainer.validation_data_dir=$EVAL_DIR/step_$TARGET_STEP" \\
+    "actor_rollout_ref.model.path=$HF_CKPT" \\
+    "actor_rollout_ref.model.use_shm=False" \\
+    "actor_rollout_ref.model.use_remove_padding=False" \\
+    "actor_rollout_ref.rollout.name=vllm" \\
+    "actor_rollout_ref.rollout.n=1" \\
+    "actor_rollout_ref.rollout.tensor_model_parallel_size={EVAL_TP}" \\
+    "actor_rollout_ref.rollout.load_format=safetensors" \\
+    "actor_rollout_ref.rollout.gpu_memory_utilization={GPU_MEMORY_UTILIZATION}" \\
+    "actor_rollout_ref.rollout.max_model_len={MAX_MODEL_LEN}" \\
+    "actor_rollout_ref.rollout.max_num_batched_tokens={MAX_BATCHED_TOKENS}" \\
+    "actor_rollout_ref.rollout.max_num_seqs={MAX_NUM_SEQS}" \\
+    "actor_rollout_ref.rollout.enable_chunked_prefill=False" \\
+    "actor_rollout_ref.rollout.temperature={EVAL_TEMPERATURE}" \\
+    "actor_rollout_ref.rollout.top_p={EVAL_TOP_P}" \\
+    "actor_rollout_ref.rollout.val_kwargs.do_sample={EVAL_DO_SAMPLE}" \\
+    "actor_rollout_ref.rollout.val_kwargs.temperature={EVAL_TEMPERATURE}" \\
+    "actor_rollout_ref.rollout.val_kwargs.top_p={EVAL_TOP_P}" \\
+    "actor_rollout_ref.rollout.val_kwargs.n={EVAL_ROLLOUT_N}"
+
+  ray stop --force || true
+done
+
+if [ $((SFT_TOTAL_STEPS % {SFT_TEST_FREQ})) -ne 0 ]; then
+  TARGET_STEP="$SFT_TOTAL_STEPS"
+  echo "Training final partial segment through step $TARGET_STEP"
+  torchrun --standalone --nnodes=1 --nproc_per_node={GPUS_PER_NODE} \\
+    -m verl.trainer.sft_trainer \\
+    --config-name sft_trainer_engine \\
+    "data.train_files=$SFT_TRAIN" \\
+    "data.val_files=$SFT_VAL" \\
+    "data.train_batch_size={SFT_TRAIN_BATCH_SIZE}" \\
+    "data.micro_batch_size_per_gpu={SFT_MICRO_BATCH_SIZE_PER_GPU}" \\
+    "data.max_length={SFT_MAX_LENGTH}" \\
+    "data.truncation=right" \\
+    "data.ignore_input_ids_mismatch=True" \\
+    "model.path={args.student_model}" \\
+    "model.trust_remote_code=True" \\
+    "model.use_shm=True" \\
+    "engine.model_dtype=bfloat16" \\
+    "optim.lr={SFT_LR}" \\
+    "trainer.project_name=gkd_base" \\
+    "trainer.experiment_name={exp_name}" \\
+    "trainer.default_local_dir=$CKPT_DIR" \\
+    "trainer.logger=[console,wandb]" \\
+    "trainer.total_epochs={SFT_TOTAL_EPOCHS}" \\
+    "trainer.total_training_steps=$TARGET_STEP" \\
+    "trainer.n_gpus_per_node={GPUS_PER_NODE}" \\
+    "trainer.nnodes=1" \\
+    "trainer.test_freq=-1" \\
+    "trainer.save_freq=1" \\
+    "checkpoint.save_contents=[model,optimizer,extra,hf_model]" \\
+    "checkpoint.load_contents=[model,optimizer,extra]"
+fi
 """
 
     display_name = f"gkd-{timestamp}"

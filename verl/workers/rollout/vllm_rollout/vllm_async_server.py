@@ -314,7 +314,9 @@ class ExternalZeroMQDistributedExecutor(Executor):
 
         # Keep external executor init aligned with upstream vLLM ray executor.
         def _update_block_size(worker):
-            current_platform.update_block_size_for_backend(worker.vllm_config)
+            update_block_size = getattr(current_platform, "update_block_size_for_backend", None)
+            if callable(update_block_size):
+                update_block_size(worker.vllm_config)
 
         self.collective_rpc(_update_block_size)
 

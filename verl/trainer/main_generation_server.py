@@ -121,7 +121,16 @@ async def generate(
 
 @hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
 def main(config):
-    ray.init(runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_USE_V1": "1"}})
+    ray.init(
+        runtime_env={
+            "env_vars": {
+                "TOKENIZERS_PARALLELISM": "true",
+                "NCCL_DEBUG": "WARN",
+                "VLLM_USE_V1": "1",
+                "VLLM_ALLREDUCE_USE_SYMM_MEM": os.environ.get("VLLM_ALLREDUCE_USE_SYMM_MEM", "0"),
+            }
+        }
+    )
 
     pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
     OmegaConf.resolve(config)

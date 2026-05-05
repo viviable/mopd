@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from datetime import datetime
 import os
+import shlex
 
 from azure.ai.ml import Input, MLClient, Output, PyTorchDistribution, command
 from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential
@@ -11,7 +12,7 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 # =========================== CONFIGURATION ===========================
 CONFIG_NAME = "sdpo"
 DATA_ROOT_PATH = "UI/2026-04-28_173802_UTC/opd_hf"
-DATA_SUBDIR = "lcb_v6"
+DATA_SUBDIR = "tooluse"
 DATASTORE_NAME = "workspaceblobstore"
 TRAIN_FILE = "train.parquet"
 VAL_FILE = "test.parquet"
@@ -26,7 +27,7 @@ DONTS_REPROMPT_ON_SELF_SUCCESS = "True"
 ALPHA = 0.5
 TEACHER_UPDATE_RATE = 0.01
 
-DEFAULT_MODEL_PATH = "Qwen/Qwen3-32B"
+DEFAULT_MODEL_PATH = "Qwen/Qwen3-14B"
 
 MAX_PROMPT_LENGTH = 1024
 MAX_RESPONSE_LENGTH = 1024
@@ -79,6 +80,8 @@ def _build_command_str(
     model_path: str,
     instance_count: int,
     gpus_per_node: int,
+    clear_hf_cache: bool,
+    use_shm: bool,
 ) -> str:
     return f"""
 set -euo pipefail
@@ -95,6 +98,10 @@ export NUM_NODES={instance_count}
 export GPUS_PER_NODE={gpus_per_node}
 export RAY_HEAD_PORT=6379
 export RAY_DASHBOARD_PORT=8265
+export CLEAN_SHM_CACHE=1
+export CLEAR_HF_MODEL_CACHE={"1" if clear_hf_cache else "0"}
+export USE_SHM_MODEL_CACHE={"1" if use_shm else "0"}
+export HF_CLEAN_MODEL_1={shlex.quote(model_path)}
 
 NODE_RANK_VALUE="${{NODE_RANK:-}}"
 if [ -z "$NODE_RANK_VALUE" ]; then
@@ -115,10 +122,100 @@ echo "Mounted dataset directory: ${{inputs.dataset}}"
 echo "Resolved datastore path: {resolved_data_path}"
 echo "Model: {model_path}"
 echo "Rollout settings: n={ROLLOUT_BATCH_SIZE}, tp={ROLLOUT_TENSOR_PARALLEL_SIZE}, prompt={MAX_PROMPT_LENGTH}, response={MAX_RESPONSE_LENGTH}, max_model_len={ROLLOUT_MAX_MODEL_LEN}, max_batched_tokens={ROLLOUT_MAX_BATCHED_TOKENS}, gpu_mem_util={ROLLOUT_GPU_MEMORY_UTILIZATION}"
+echo "Shared-memory model cache: $USE_SHM_MODEL_CACHE"
 echo "AML distributed env: NODE_RANK=$NODE_RANK_VALUE MASTER_ADDR=$MASTER_HOST MASTER_PORT=$MASTER_PORT_VALUE NUM_NODES=$NUM_NODES GPUS_PER_NODE=$GPUS_PER_NODE"
 hostname
+df -h /dev/shm || true
 ls -la "${{inputs.dataset}}" || true
 find "${{inputs.dataset}}" -maxdepth 2 -type f | sort || true
+
+if [ "$CLEAN_SHM_CACHE" = "1" ]; then
+  echo "Clearing /dev/shm/verl-cache/*"
+  rm -rf /dev/shm/verl-cache/* || true
+fi
+
+if [ "$CLEAR_HF_MODEL_CACHE" = "1" ]; then
+  echo "Clearing Hugging Face cache for selected model(s)"
+  python - <<'PY'
+import os
+import shutil
+
+models = [os.environ.get("HF_CLEAN_MODEL_1", "").strip()]
+models = [m for m in models if m]
+
+roots = []
+hf_home = os.environ.get("HF_HOME", "").strip()
+home = os.path.expanduser("~")
+if hf_home:
+    roots.append(os.path.join(hf_home, "hub"))
+roots.extend(
+    [
+        os.path.join(home, ".cache", "huggingface", "hub"),
+        os.path.join(home, ".cache", "hf", "hub"),
+    ]
+)
+
+seen = set()
+for model in models:
+    repo_dir = "models--" + model.replace("/", "--")
+    for root in roots:
+        path = os.path.join(root, repo_dir)
+        if path in seen:
+            continue
+        seen.add(path)
+        if os.path.isdir(path):
+            print("Removing HF cache:", path)
+            shutil.rmtree(path, ignore_errors=True)
+PY
+fi
+
+echo "Preparing Hugging Face model snapshot on this node"
+python - <<'PY'
+import os
+import sys
+
+model = os.environ.get("HF_CLEAN_MODEL_1", "").strip()
+if not model:
+    print("No model configured for HF snapshot preparation")
+    sys.exit(0)
+
+if os.path.exists(model):
+    print(f"Model path is already local: {{model}}")
+    sys.exit(0)
+
+try:
+    from huggingface_hub import snapshot_download
+except Exception as exc:
+    print(f"WARNING: could not import huggingface_hub for snapshot preflight: {{exc}}")
+    sys.exit(0)
+
+try:
+    local_path = snapshot_download(
+        repo_id=model,
+        allow_patterns=[
+            "*.json",
+            "*.model",
+            "*.txt",
+            "*.safetensors",
+            "*.py",
+        ],
+    )
+except Exception as exc:
+    print(f"ERROR: failed to download HF model snapshot for {{model}}: {{exc}}")
+    raise
+
+required = ["config.json", "model.safetensors.index.json"]
+missing = [name for name in required if not os.path.exists(os.path.join(local_path, name))]
+shards = [name for name in os.listdir(local_path) if name.endswith(".safetensors")]
+if missing or not shards:
+    raise RuntimeError(
+        f"Incomplete HF snapshot for {{model}} at {{local_path}}; "
+        f"missing={{missing}}, safetensors_shards={{len(shards)}}"
+    )
+
+print(f"HF model snapshot ready: {{local_path}}")
+print(f"Safetensors shard count: {{len(shards)}}")
+PY
 
 if [ -z "$MASTER_HOST" ]; then
   echo "MASTER_ADDR is empty; falling back to local node IP"
@@ -179,6 +276,12 @@ if __name__ == "__main__":
     parser.add_argument("--environment", type=str, default=ENVIRONMENT)
     parser.add_argument("--rollout_tp", type=int, default=ROLLOUT_TENSOR_PARALLEL_SIZE)
     parser.add_argument("--teacher_update_rate", type=float, default=TEACHER_UPDATE_RATE)
+    parser.add_argument("--clear_hf_cache", action="store_true")
+    parser.add_argument(
+        "--use_shm",
+        action="store_true",
+        help="Copy the HF model snapshot into /dev/shm before loading. Disabled by default for large multinode models.",
+    )
     args = parser.parse_args()
 
     if args.instance_count < 2:
@@ -252,7 +355,7 @@ if __name__ == "__main__":
         f"actor_rollout_ref.rollout.max_num_seqs={ROLLOUT_MAX_NUM_SEQS}",
         "actor_rollout_ref.rollout.enable_chunked_prefill=False",
         f"actor_rollout_ref.model.path={args.model_path}",
-        "actor_rollout_ref.model.use_shm=True",
+        f"actor_rollout_ref.model.use_shm={args.use_shm}",
         "actor_rollout_ref.model.use_remove_padding=False",
         "+actor_rollout_ref.model.override_config.attn_implementation=flash_attention_2",
         "+critic.model.override_config.attn_implementation=flash_attention_2",
@@ -289,6 +392,8 @@ if __name__ == "__main__":
         model_path=args.model_path,
         instance_count=args.instance_count,
         gpus_per_node=args.gpus_per_node,
+        clear_hf_cache=args.clear_hf_cache,
+        use_shm=args.use_shm,
     )
 
     display_name = f"sdpo-multinode-{timestamp}"
@@ -351,4 +456,6 @@ if __name__ == "__main__":
     print("GPUs per node:", args.gpus_per_node)
     print("Rollout TP:", args.rollout_tp)
     print("Teacher update rate:", args.teacher_update_rate)
+    print("Clear HF cache:", args.clear_hf_cache)
+    print("Use /dev/shm model cache:", args.use_shm)
     print("Multinode SDPO job submitted successfully.")

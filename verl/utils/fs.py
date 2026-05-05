@@ -142,22 +142,42 @@ def copy_to_shm(src: str):
     """
     Load the model into   /dev/shm   to make the process of loading the model multiple times more efficient.
     """
+    from filelock import FileLock
+
     shm_model_root = "/dev/shm/verl-cache/"
     src_abs = os.path.abspath(os.path.normpath(src))
-    dest = os.path.join(shm_model_root, hashlib.md5(src_abs.encode("utf-8")).hexdigest())
-    os.makedirs(dest, exist_ok=True)
-    dest = os.path.join(dest, os.path.basename(src_abs))
-    if os.path.exists(dest) and verify_copy(src, dest):
-        # inform user and depends on him
-        print(
-            f"[WARNING]: The memory model path {dest} already exists. If it is not you want, please clear it and "
-            f"restart the task."
-        )
-    else:
-        if os.path.isdir(src):
-            shutil.copytree(src, dest, symlinks=False, dirs_exist_ok=True)
+    cache_key = hashlib.md5(src_abs.encode("utf-8")).hexdigest()
+    cache_dir = os.path.join(shm_model_root, cache_key)
+    os.makedirs(cache_dir, exist_ok=True)
+    dest = os.path.join(cache_dir, os.path.basename(src_abs))
+    lock_path = os.path.join(cache_dir, ".copy.lock")
+
+    with FileLock(lock_path):
+        if os.path.exists(dest) and verify_copy(src, dest):
+            print(
+                f"[WARNING]: The memory model path {dest} already exists. If it is not you want, please clear it and "
+                f"restart the task."
+            )
         else:
-            shutil.copy2(src, dest)
+            tmp_dest = os.path.join(cache_dir, f".{os.path.basename(src_abs)}.tmp.{os.getpid()}")
+            if os.path.isdir(tmp_dest):
+                shutil.rmtree(tmp_dest, ignore_errors=True)
+            elif os.path.exists(tmp_dest):
+                os.remove(tmp_dest)
+
+            if os.path.isdir(src):
+                shutil.copytree(src, tmp_dest, symlinks=False)
+            else:
+                shutil.copy2(src, tmp_dest)
+
+            if os.path.isdir(dest):
+                shutil.rmtree(dest, ignore_errors=True)
+            elif os.path.exists(dest):
+                os.remove(dest)
+            os.replace(tmp_dest, dest)
+
+        if not verify_copy(src, dest):
+            raise RuntimeError(f"Failed to verify shared-memory copy from {src} to {dest}")
     return dest
 
 

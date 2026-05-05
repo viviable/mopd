@@ -25,21 +25,22 @@ CLIP_ADV_HIGH = "null"
 DONTS_REPROMPT_ON_SELF_SUCCESS = "True"
 ALPHA = 0.5
 # MODEL_PATH = "Qwen/Qwen2.5-3B-Instruct"
-MODEL_PATH = "Qwen/Qwen3-4B"
+MODEL_PATH = "Qwen/Qwen3-8B"
 # MODEL_PATH = "Qwen/Qwen3.6-27B"
 
 MAX_PROMPT_LENGTH = 1024
-MAX_RESPONSE_LENGTH = 1024
-ROLLOUT_MAX_MODEL_LEN = 2048
-ROLLOUT_MAX_BATCHED_TOKENS = 2048
+MAX_RESPONSE_LENGTH = 4096
+ROLLOUT_MAX_MODEL_LEN = 4096
+ROLLOUT_MAX_BATCHED_TOKENS = 4096
 ROLLOUT_MAX_NUM_SEQS = 64
-ROLLOUT_GPU_MEMORY_UTILIZATION = 0.2
+ROLLOUT_GPU_MEMORY_UTILIZATION = 0.65
 
 VAL_ROLLOUT_BATCH_SIZE = 8
 INCLUDE_ANOTHER_SOLUTION = "False"
 INCLUDE_FAILURE_SOLUTION = "False"
-SUMMARIZE_SOLUTIONS = "False"
-SUMMARY_K = 8
+SUMMARIZE_SOLUTIONS = "True"
+SUMMARY_FROM_ALL = "True"
+SUMMARY_K = 4
 
 # Compute config
 INSTANCE_TYPE = "Singularity.ND96_H100_v5"
@@ -105,7 +106,7 @@ if __name__ == "__main__":
         resolved_data_path = f"{resolved_data_path}/{DATA_SUBDIR.strip('/')}"
     model_name = MODEL_PATH.replace("/", "-")
     exp_name = (
-        f"SDPO-Success{INCLUDE_ANOTHER_SOLUTION}-Fail{INCLUDE_FAILURE_SOLUTION}-train{TRAIN_BATCH_SIZE}-alpha{ALPHA}-rollout{ROLLOUT_BATCH_SIZE}"
+        f"{DATA_SUBDIR}-Success{INCLUDE_ANOTHER_SOLUTION}-Fail{INCLUDE_FAILURE_SOLUTION}-train{TRAIN_BATCH_SIZE}-alpha{ALPHA}-rollout{ROLLOUT_BATCH_SIZE}"
         f"-lr{LR}-lambda{LAMBDA}-clip_adv_high{CLIP_ADV_HIGH}"
         f"-dross{DONTS_REPROMPT_ON_SELF_SUCCESS}-{model_name}-{args.suffix}"
     )
@@ -128,7 +129,6 @@ if __name__ == "__main__":
         f"actor_rollout_ref.rollout.gpu_memory_utilization={ROLLOUT_GPU_MEMORY_UTILIZATION}",
         f"actor_rollout_ref.rollout.max_model_len={ROLLOUT_MAX_MODEL_LEN}",
         f"actor_rollout_ref.rollout.max_num_batched_tokens={ROLLOUT_MAX_BATCHED_TOKENS}",
-        f"actor_rollout_ref.rollout.max_num_seqs={ROLLOUT_MAX_NUM_SEQS}",
         "actor_rollout_ref.rollout.enable_chunked_prefill=False",
         f"actor_rollout_ref.model.path={MODEL_PATH}",
         "actor_rollout_ref.model.use_shm=True",

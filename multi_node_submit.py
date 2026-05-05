@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from datetime import datetime
 import os
+import shlex
 
 from azure.ai.ml import Input, MLClient, Output, PyTorchDistribution, command
 from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential
@@ -11,7 +12,7 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 # =========================== CONFIGURATION ===========================
 CONFIG_NAME = "sdpo"
 DATA_ROOT_PATH = "UI/2026-04-28_173802_UTC/opd_hf"
-DATA_SUBDIR = "lcb_v6"
+DATA_SUBDIR = "tooluse"
 DATASTORE_NAME = "workspaceblobstore"
 TRAIN_FILE = "train.parquet"
 VAL_FILE = "test.parquet"
@@ -75,6 +76,7 @@ def _build_command_str(
     teacher_model: str,
     instance_count: int,
     gpus_per_node: int,
+    clear_hf_cache: bool,
 ) -> str:
     return f"""
 set -euo pipefail
@@ -91,6 +93,10 @@ export NUM_NODES={instance_count}
 export GPUS_PER_NODE={gpus_per_node}
 export RAY_HEAD_PORT=6379
 export RAY_DASHBOARD_PORT=8265
+export CLEAN_SHM_CACHE=1
+export CLEAR_HF_MODEL_CACHE={"1" if clear_hf_cache else "0"}
+export HF_CLEAN_MODEL_1={shlex.quote(student_model)}
+export HF_CLEAN_MODEL_2={shlex.quote(teacher_model)}
 
 NODE_RANK_VALUE="${{NODE_RANK:-}}"
 if [ -z "$NODE_RANK_VALUE" ]; then
@@ -116,6 +122,49 @@ echo "AML distributed env: NODE_RANK=$NODE_RANK_VALUE MASTER_ADDR=$MASTER_HOST M
 hostname
 ls -la "${{inputs.dataset}}" || true
 find "${{inputs.dataset}}" -maxdepth 2 -type f | sort || true
+
+if [ "$CLEAN_SHM_CACHE" = "1" ]; then
+  echo "Clearing /dev/shm/verl-cache/*"
+  rm -rf /dev/shm/verl-cache/* || true
+fi
+
+if [ "$CLEAR_HF_MODEL_CACHE" = "1" ]; then
+  echo "Clearing Hugging Face cache for selected model(s)"
+  python - <<'PY'
+import os
+import shutil
+
+models = [
+    os.environ.get("HF_CLEAN_MODEL_1", "").strip(),
+    os.environ.get("HF_CLEAN_MODEL_2", "").strip(),
+]
+models = [m for m in models if m]
+
+roots = []
+hf_home = os.environ.get("HF_HOME", "").strip()
+home = os.path.expanduser("~")
+if hf_home:
+    roots.append(os.path.join(hf_home, "hub"))
+roots.extend(
+    [
+        os.path.join(home, ".cache", "huggingface", "hub"),
+        os.path.join(home, ".cache", "hf", "hub"),
+    ]
+)
+
+seen = set()
+for model in models:
+    repo_dir = "models--" + model.replace("/", "--")
+    for root in roots:
+        path = os.path.join(root, repo_dir)
+        if path in seen:
+            continue
+        seen.add(path)
+        if os.path.isdir(path):
+            print("Removing HF cache:", path)
+            shutil.rmtree(path, ignore_errors=True)
+PY
+fi
 
 if [ -z "$MASTER_HOST" ]; then
   echo "MASTER_ADDR is empty; falling back to local node IP"
@@ -175,6 +224,7 @@ if __name__ == "__main__":
     parser.add_argument("--student_model", type=str, default=DEFAULT_STUDENT_MODEL)
     parser.add_argument("--teacher_model", type=str, default=DEFAULT_TEACHER_MODEL)
     parser.add_argument("--environment", type=str, default=ENVIRONMENT)
+    parser.add_argument("--clear_hf_cache", action="store_true")
     args = parser.parse_args()
 
     if args.instance_count < 2:
@@ -285,6 +335,7 @@ if __name__ == "__main__":
         teacher_model=args.teacher_model,
         instance_count=args.instance_count,
         gpus_per_node=args.gpus_per_node,
+        clear_hf_cache=args.clear_hf_cache,
     )
 
     display_name = f"ts-multinode-{timestamp}"
@@ -346,4 +397,5 @@ if __name__ == "__main__":
     print("Student model:", args.student_model)
     print("Nodes:", args.instance_count)
     print("GPUs per node:", args.gpus_per_node)
+    print("Clear HF cache:", args.clear_hf_cache)
     print("Multinode TS job submitted successfully.")

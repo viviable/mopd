@@ -73,7 +73,10 @@ if _VLLM_VERSION > version.parse("0.11.0"):
     if _VLLM_VERSION == version.parse("0.12.0"):
         from vllm.entrypoints.harmony_utils import get_encoding
 
-        get_encoding()
+        try:
+            get_encoding()
+        except Exception as exc:
+            logging.getLogger(__file__).warning("Skipping vLLM Harmony encoding warmup: %s", exc)
 else:
     from vllm.utils import FlexibleArgumentParser
 

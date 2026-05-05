@@ -1311,6 +1311,9 @@ class RayPPOTrainer:
                     pfx = f"{metric_sec}/{data_source}/{var_name}/{metric_name}"
                     metric_dict[pfx] = metric_val
 
+                    if var_name == "acc" and metric_name == "best@1/mean":
+                        metric_dict[f"val-core/{data_source}/pass@1"] = metric_val
+
         if len(sample_turns) > 0:
             sample_turns = np.concatenate(sample_turns)
             metric_dict["val-aux/num_turns/min"] = sample_turns.min()

@@ -567,14 +567,15 @@ def process_validation_metrics(
 
     # 2. cache ns list
     def gen_ns(n_resps: int) -> list[int]:
-        if n_resps <= 1:
+        if n_resps <= 0:
             return []
-        ns = []
+        ns = [1]
         n = 2
         while n < n_resps:
             ns.append(n)
             n *= 2
-        ns.append(n_resps)
+        if ns[-1] != n_resps:
+            ns.append(n_resps)
         return ns
 
     ns_cache = {}
